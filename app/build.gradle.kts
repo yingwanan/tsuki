@@ -20,7 +20,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.github.yingwanan.shizuku"
+        applicationId = "io.github.yingwanan.tsuki"
         minSdk = 26
         targetSdk = 34
         versionCode = 2
