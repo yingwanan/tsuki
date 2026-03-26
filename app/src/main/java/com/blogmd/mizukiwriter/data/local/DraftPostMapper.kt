@@ -1,0 +1,73 @@
+package com.blogmd.mizukiwriter.data.local
+
+import com.blogmd.mizukiwriter.data.model.DraftPost
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+
+private val json = Json { ignoreUnknownKeys = true }
+
+fun DraftPostEntity.toModel(): DraftPost = DraftPost(
+    id = id,
+    title = title,
+    slug = slug,
+    body = body,
+    description = description,
+    published = published,
+    updated = updated,
+    date = date,
+    pubDate = pubDate,
+    tags = json.decodeFromString<List<String>>(tagsJson),
+    alias = json.decodeFromString<List<String>>(aliasJson),
+    category = category,
+    lang = lang,
+    draft = draft,
+    pinned = pinned,
+    comment = comment,
+    priority = priority,
+    image = image,
+    author = author,
+    sourceLink = sourceLink,
+    licenseName = licenseName,
+    licenseUrl = licenseUrl,
+    permalink = permalink,
+    encrypted = encrypted,
+    password = password,
+    passwordHint = passwordHint,
+    createdAt = createdAt,
+    modifiedAt = modifiedAt,
+    publishState = publishState,
+    lastPublishError = lastPublishError,
+)
+
+fun DraftPost.toEntity(): DraftPostEntity = DraftPostEntity(
+    id = id,
+    title = title,
+    slug = slug,
+    body = body,
+    description = description,
+    published = published,
+    updated = updated,
+    date = date,
+    pubDate = pubDate,
+    tagsJson = json.encodeToString(tags),
+    aliasJson = json.encodeToString(alias),
+    category = category,
+    lang = lang,
+    draft = draft,
+    pinned = pinned,
+    comment = comment,
+    priority = priority,
+    image = image,
+    author = author,
+    sourceLink = sourceLink,
+    licenseName = licenseName,
+    licenseUrl = licenseUrl,
+    permalink = permalink,
+    encrypted = encrypted,
+    password = password,
+    passwordHint = passwordHint,
+    createdAt = createdAt,
+    modifiedAt = modifiedAt,
+    publishState = publishState,
+    lastPublishError = lastPublishError,
+)
