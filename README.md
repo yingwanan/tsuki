@@ -1,79 +1,106 @@
-# Shizuku
+# tsuki
 
-`Shizuku` 是一个面向 Mizuki 静态博客的原生 Android 写作应用。它支持离线写作、本地草稿、Markdown 快捷插入、Mizuki Frontmatter 编辑、图片导入，以及直接推送到 GitHub 触发博客构建。
+`tsuki` 是一个面向 `Mizuki` 静态博客的原生 Android 写作应用。你可以直接在手机里新建、编辑、保存和发布 Markdown 文章，再把文章一键推送到 GitHub 仓库，交给博客构建平台自动更新站点。
 
-## 功能特性
+## 它能做什么
 
-- 原生 Android + Jetpack Compose 界面
-- 面向 Mizuki 博客结构的文章管理与发布
-- Markdown 正文编辑、快捷插入、分屏预览
-- 可折叠元数据面板，支持完整 Frontmatter 字段
-- 本地草稿持久化，支持离线写作
-- 直接推送到 GitHub 仓库发布文章
-- GitHub PAT 使用 Android Keystore 加密后再本地存储
-- 支持删除本地草稿，并可选同步删除 GitHub 远程文章
+- 直接在手机里写 `Markdown`
+- 按 `Mizuki` 博客格式填写完整文章元数据
+- 使用快捷工具栏快速插入标题、列表、代码块、链接、图片等常见语法
+- 通过本地草稿持续保存，离线也能继续写
+- 连接 GitHub 仓库，把文章发布到博客内容目录
+- 修改已发布文章后再次上传，覆盖远程同名文章
+- 删除本地文章时，可选同步删除 GitHub 上的对应文件
 
-## 技术栈
+## 适合谁
 
-- Kotlin
-- Jetpack Compose
-- Room
-- DataStore
-- Retrofit + OkHttp
-- Markwon
+- 使用 `Mizuki` 作为博客主题的人
+- 文章内容存放在 GitHub 仓库里的人
+- 希望在安卓手机上直接完成写作和发布的人
 
-## 构建要求
+## 核心界面
 
-- JDK 17
-- Android SDK 34
-- Termux 或标准 Android 构建环境
+- 文章页：查看本地文章、继续编辑、创建新文章
+- 编辑页：全屏写作，正文与元数据集中处理
+- 元数据面板：填写标题、描述、日期、标签、分类、封面、作者、许可等 Frontmatter 字段
+- 设置页：填写 GitHub 仓库信息、默认作者、默认许可名、令牌等发布参数
 
-## 调试构建
+## 使用方式
 
-```bash
-./gradlew :app:assembleDebug
-```
+### 1. 下载应用
 
-调试 APK 输出路径：
+前往 GitHub Releases 下载最新 APK：
 
-`app/build/outputs/apk/debug/app-debug.apk`
+- 仓库地址：<https://github.com/yingwanan/tsuki>
+- 发行页面：<https://github.com/yingwanan/tsuki/releases>
 
-## Release 签名与构建
+### 2. 配置 GitHub 发布信息
 
-项目支持通过根目录的 `keystore.properties` 读取 release 签名配置。文件格式如下：
+首次使用时，进入设置页，填写以下内容：
 
-```properties
-storeFile=/absolute/path/to/shizuku-release.jks
-storePassword=your_store_password
-keyAlias=shizuku-release
-keyPassword=your_key_password
-```
+- GitHub 用户名
+- 仓库名
+- 分支名
+- 文章目录
+- 细粒度令牌或传统令牌
+- 默认作者
+- 默认许可名
 
-构建 release：
+这些设置用于把文章推送到你的博客仓库。
 
-```bash
-./gradlew :app:assembleRelease
-```
+### 3. 创建 GitHub 令牌
 
-release APK 输出路径：
+如果你使用的是细粒度令牌，推荐这样配置：
 
-`app/build/outputs/apk/release/app-release.apk`
+- Repository access：选择 `Only select repositories`
+- Repository selection：勾选你的博客仓库
+- Repository permissions：
+  - `Contents` → `Read and write`
+  - 如果你需要读取仓库基础信息，保持元数据默认只读即可
 
-## GitHub 发布流程
+如果页面里没有看到 `Contents` 权限，通常说明：
 
-1. 创建或准备一个公开 GitHub 仓库
-2. 提交源码并推送
-3. 使用 `gh release create v1.0.0` 上传 release APK
+- 你创建的不是 Fine-grained personal access token
+- 当前账号没有选中具体仓库
+- 仓库访问范围还没有切换到指定仓库
+
+设置完成后，把生成的令牌复制到应用设置页即可。
+
+### 4. 写文章
+
+新建文章后，先展开元数据面板，补全文章信息：
+
+- 标题：必填
+- 描述：必填
+- 日期：可直接使用设备当前时间快捷填入
+- 其他字段：按你的博客需求填写
+
+填写完成后可以收起元数据，继续专注正文写作。
+
+### 5. 发布文章
+
+点击上传后，`tsuki` 会把当前文章转换成带 Frontmatter 的 `.md` 文件，并推送到 GitHub 仓库。仓库更新后，你的博客构建平台就会自动重新构建站点。
+
+## Markdown 写作说明
+
+`Markdown` 的普通回车并不总是等于最终渲染时的换行。
+
+- 想分段：直接空一行
+- 想在同一段里强制换行：在行尾加两个空格后再回车，或使用 `<br>`
+
+如果你只是连续按回车但没有形成空行，很多 Markdown 渲染器仍会把内容当成同一段。
+
+## 安全说明
+
+- GitHub 令牌只保存在你的设备本地
+- 应用会使用 Android Keystore 进行本地加密存储
+- 不要把拥有写入权限的令牌分享给其他人
+
+## 当前版本
+
+- 应用名：`tsuki`
+- 最新版本：`1.0.1`
 
 ## 许可
 
-源码采用 **CC BY-NC 4.0** 许可。
-
-- 你可以分享和修改源码
-- 必须保留署名
-- 不可将源码用于商业用途
-- 许可详情见 [LICENSE](./LICENSE)
-
-## 状态
-
-当前发布版本：`1.0.0`
+本项目源码采用 `CC BY-NC 4.0` 许可发布。你可以在保留署名的前提下学习、修改和分享源码，但不得将源码用于商业用途。详细内容见仓库中的 `LICENSE` 文件。
