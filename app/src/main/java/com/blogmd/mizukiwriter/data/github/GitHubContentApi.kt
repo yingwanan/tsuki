@@ -49,6 +49,14 @@ interface GitHubContentApi {
         @Path("commitSha") commitSha: String,
     ): GitHubCommitResponse
 
+    @GET("repos/{owner}/{repo}/git/trees/{treeSha}")
+    suspend fun getTree(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path("treeSha") treeSha: String,
+        @Query("recursive") recursive: Int = 1,
+    ): GitHubTreeResponse
+
     @POST("repos/{owner}/{repo}/git/blobs")
     suspend fun createBlob(
         @Path("owner") owner: String,

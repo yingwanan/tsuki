@@ -24,6 +24,7 @@ interface GitHubGateway {
     suspend fun deleteContent(owner: String, repo: String, path: String, body: GitHubDeleteRequest): GitHubContentResponse
     suspend fun getBranchRef(owner: String, repo: String, branch: String): GitHubRefResponse
     suspend fun getCommit(owner: String, repo: String, commitSha: String): GitHubCommitResponse
+    suspend fun getTree(owner: String, repo: String, treeSha: String, recursive: Boolean = true): GitHubTreeResponse
     suspend fun createBlob(owner: String, repo: String, body: GitHubBlobRequest): GitHubBlobResponse
     suspend fun createTree(owner: String, repo: String, body: GitHubCreateTreeRequest): GitHubTreeResponse
     suspend fun createCommit(owner: String, repo: String, body: GitHubCreateCommitRequest): GitHubCommitResponse
@@ -142,28 +143,51 @@ class GitHubPublisher(
         val articleRoot = "${settings.postsBasePath.trim('/')}/$slug"
         val branch = settings.branch.ifBlank { GitHubSettings().branch }
         val api = gatewayFactory(settings.personalAccessToken)
-        val remotePaths = buildList {
-            assetStorage.listAssetNames(draft.id).forEach { add("$articleRoot/$it") }
-            add("$articleRoot/index.md")
-        }
 
         return try {
-            for (path in remotePaths) {
-                val sha = runCatching {
-                    api.getContent(settings.owner, settings.repo, path, branch).sha
-                }.getOrNull() ?: continue
+            val headRef = api.getBranchRef(settings.owner, settings.repo, branch)
+            val headCommitSha = headRef.obj.sha
+            val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
+            val tree = api.getTree(settings.owner, settings.repo, headCommit.tree.sha)
 
-                api.deleteContent(
-                    owner = settings.owner,
-                    repo = settings.repo,
-                    path = path,
-                    body = GitHubDeleteRequest(
-                        message = "chore(blog): delete $slug",
-                        branch = branch,
-                        sha = sha,
-                    ),
-                )
+            val remoteFiles = tree.tree.filter { node ->
+                node.type == "blob" && node.path.startsWith("$articleRoot/")
             }
+
+            if (remoteFiles.isEmpty()) {
+                return GitHubDeleteResult.Failure("未找到 GitHub 远程文章：$articleRoot")
+            }
+
+            val deleteTree = api.createTree(
+                settings.owner,
+                settings.repo,
+                GitHubCreateTreeRequest(
+                    baseTree = headCommit.tree.sha,
+                    tree = remoteFiles.map { node ->
+                        GitHubTreeEntry(
+                            path = node.path,
+                            mode = node.mode,
+                            type = node.type,
+                            sha = null,
+                        )
+                    },
+                ),
+            )
+            val commit = api.createCommit(
+                settings.owner,
+                settings.repo,
+                GitHubCreateCommitRequest(
+                    message = "chore(blog): delete $slug",
+                    tree = deleteTree.sha,
+                    parents = listOf(headCommitSha),
+                ),
+            )
+            api.updateBranchRef(
+                settings.owner,
+                settings.repo,
+                branch,
+                GitHubUpdateRefRequest(sha = commit.sha),
+            )
             GitHubDeleteResult.Success(slug)
         } catch (error: HttpException) {
             GitHubDeleteResult.Failure(error.toReadableMessage("GitHub 删除失败"))
@@ -234,6 +258,9 @@ private fun createGateway(token: String): GitHubGateway {
 
         override suspend fun getCommit(owner: String, repo: String, commitSha: String): GitHubCommitResponse =
             api.getCommit(owner, repo, commitSha)
+
+        override suspend fun getTree(owner: String, repo: String, treeSha: String, recursive: Boolean): GitHubTreeResponse =
+            api.getTree(owner, repo, treeSha, if (recursive) 1 else 0)
 
         override suspend fun createBlob(owner: String, repo: String, body: GitHubBlobRequest): GitHubBlobResponse =
             api.createBlob(owner, repo, body)

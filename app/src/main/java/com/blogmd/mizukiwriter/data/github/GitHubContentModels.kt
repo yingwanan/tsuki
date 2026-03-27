@@ -64,7 +64,7 @@ data class GitHubTreeEntry(
     val path: String,
     val mode: String = "100644",
     val type: String = "blob",
-    val sha: String,
+    val sha: String? = null,
 )
 
 @Serializable
@@ -76,6 +76,16 @@ data class GitHubCreateTreeRequest(
 @Serializable
 data class GitHubTreeResponse(
     val sha: String = "",
+    val tree: List<GitHubTreeNode> = emptyList(),
+    val truncated: Boolean = false,
+)
+
+@Serializable
+data class GitHubTreeNode(
+    val path: String = "",
+    val mode: String = "100644",
+    val type: String = "blob",
+    val sha: String? = null,
 )
 
 @Serializable
