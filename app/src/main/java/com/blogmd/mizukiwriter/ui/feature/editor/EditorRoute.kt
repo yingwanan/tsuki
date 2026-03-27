@@ -77,7 +77,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.blogmd.mizukiwriter.data.model.DraftPost
-import com.blogmd.mizukiwriter.data.model.PublishState
 import com.blogmd.mizukiwriter.domain.MarkdownAction
 import com.blogmd.mizukiwriter.domain.MarkdownEditorEngine
 import com.blogmd.mizukiwriter.ui.appContainer
@@ -246,7 +245,7 @@ fun EditorRoute(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("确认删除《${currentDraft.title.ifBlank { "未命名文章" }}》吗？")
-                    if (currentDraft.publishState == PublishState.Synced && currentDraft.slug.isNotBlank()) {
+                    if (currentDraft.slug.isNotBlank()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = deleteRemote, onCheckedChange = { deleteRemote = it })
                             Text("同时删除 GitHub 远程文章")

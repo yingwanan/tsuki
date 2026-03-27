@@ -7,7 +7,6 @@ import com.blogmd.mizukiwriter.data.github.GitHubDeleteResult
 import com.blogmd.mizukiwriter.data.github.GitHubPublisherContract
 import com.blogmd.mizukiwriter.data.media.AssetStorageContract
 import com.blogmd.mizukiwriter.data.model.DraftPost
-import com.blogmd.mizukiwriter.data.model.PublishState
 import com.blogmd.mizukiwriter.data.repository.DraftRepositoryContract
 import com.blogmd.mizukiwriter.data.settings.SettingsRepositoryContract
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +37,7 @@ class PostsViewModel(
 
     fun deleteDraft(draft: DraftPost, deleteRemote: Boolean) {
         viewModelScope.launch {
-            val remoteResult = if (deleteRemote && draft.publishState == PublishState.Synced && draft.slug.isNotBlank()) {
+            val remoteResult = if (deleteRemote && draft.slug.isNotBlank()) {
                 gitHubPublisher.deleteRemoteArticle(draft, settingsRepository.settings.first())
             } else {
                 null

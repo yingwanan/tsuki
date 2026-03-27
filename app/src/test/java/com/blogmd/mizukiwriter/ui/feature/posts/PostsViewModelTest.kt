@@ -1,4 +1,4 @@
-package com.blogmd.mizukiwriter.ui.feature.editor
+package com.blogmd.mizukiwriter.ui.feature.posts
 
 import android.content.ContentResolver
 import android.net.Uri
@@ -28,7 +28,7 @@ import org.junit.Test
 import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class EditorViewModelTest {
+class PostsViewModelTest {
     private val dispatcher = StandardTestDispatcher()
 
     @Before
@@ -42,66 +42,10 @@ class EditorViewModelTest {
     }
 
     @Test
-    fun `publish fails fast when required metadata is missing`() = runTest(dispatcher) {
-        val repository = FakeDraftRepository(
-            DraftPost(
-                id = 7L,
-                title = "",
-                description = "",
-                published = "2025-01-20",
-            ),
-        )
-        val publisher = FakeGitHubPublisher()
-        val viewModel = EditorViewModel(
-            draftId = 7L,
-            draftRepository = repository,
-            settingsRepository = FakeSettingsRepository(),
-            assetStorage = FakeAssetStorage(),
-            gitHubPublisher = publisher,
-        )
-
-        runCurrent()
-        viewModel.publish()
-        runCurrent()
-
-        assertThat(viewModel.message.value).contains("标题")
-        assertThat(publisher.publishCalls).isEqualTo(0)
-    }
-
-    @Test
-    fun `deleteDraft removes local draft without touching remote when remote delete not requested`() = runTest(dispatcher) {
-        val repository = FakeDraftRepository(
-            DraftPost(
-                id = 9L,
-                title = "Title",
-                description = "Description",
-                published = "2025-01-20",
-                slug = "published-post",
-                publishState = PublishState.Synced,
-            ),
-        )
-        val publisher = FakeGitHubPublisher()
-        val viewModel = EditorViewModel(
-            draftId = 9L,
-            draftRepository = repository,
-            settingsRepository = FakeSettingsRepository(),
-            assetStorage = FakeAssetStorage(),
-            gitHubPublisher = publisher,
-        )
-
-        runCurrent()
-        viewModel.deleteDraft(deleteRemote = false)
-        runCurrent()
-
-        assertThat(repository.deletedIds).containsExactly(9L)
-        assertThat(publisher.deleteCalls).isEqualTo(0)
-    }
-
-    @Test
     fun `deleteDraft still removes remote article when delete requested and slug exists after failed sync`() = runTest(dispatcher) {
         val repository = FakeDraftRepository(
             DraftPost(
-                id = 10L,
+                id = 5L,
                 title = "Title",
                 description = "Description",
                 published = "2025-01-20",
@@ -111,8 +55,7 @@ class EditorViewModelTest {
             ),
         )
         val publisher = FakeGitHubPublisher()
-        val viewModel = EditorViewModel(
-            draftId = 10L,
+        val viewModel = PostsViewModel(
             draftRepository = repository,
             settingsRepository = FakeSettingsRepository(),
             assetStorage = FakeAssetStorage(),
@@ -120,75 +63,18 @@ class EditorViewModelTest {
         )
 
         runCurrent()
-        viewModel.deleteDraft(deleteRemote = true)
+        viewModel.deleteDraft(repository.requireDraft(5L), deleteRemote = true)
         runCurrent()
 
-        assertThat(repository.deletedIds).containsExactly(10L)
+        assertThat(repository.deletedIds).containsExactly(5L)
         assertThat(publisher.deleteCalls).isEqualTo(1)
-    }
-
-    @Test
-    fun `publish automatically overwrites when draft has already been synced`() = runTest(dispatcher) {
-        val repository = FakeDraftRepository(
-            DraftPost(
-                id = 11L,
-                title = "Title",
-                description = "Description",
-                published = "2025-01-20",
-                slug = "published-post",
-                publishState = PublishState.Synced,
-            ),
-        )
-        val publisher = FakeGitHubPublisher()
-        val viewModel = EditorViewModel(
-            draftId = 11L,
-            draftRepository = repository,
-            settingsRepository = FakeSettingsRepository(),
-            assetStorage = FakeAssetStorage(),
-            gitHubPublisher = publisher,
-        )
-
-        runCurrent()
-        viewModel.publish()
-        runCurrent()
-
-        assertThat(publisher.publishCalls).isEqualTo(1)
-        assertThat(publisher.lastOverwrite).isTrue()
-    }
-
-    @Test
-    fun `publish automatically overwrites when draft has slug even after previous failure`() = runTest(dispatcher) {
-        val repository = FakeDraftRepository(
-            DraftPost(
-                id = 12L,
-                title = "Title",
-                description = "Description",
-                published = "2025-01-20",
-                slug = "published-post",
-                publishState = PublishState.Failed,
-                lastPublishError = "GitHub 请求失败: 422",
-            ),
-        )
-        val publisher = FakeGitHubPublisher()
-        val viewModel = EditorViewModel(
-            draftId = 12L,
-            draftRepository = repository,
-            settingsRepository = FakeSettingsRepository(),
-            assetStorage = FakeAssetStorage(),
-            gitHubPublisher = publisher,
-        )
-
-        runCurrent()
-        viewModel.publish()
-        runCurrent()
-
-        assertThat(publisher.publishCalls).isEqualTo(1)
-        assertThat(publisher.lastOverwrite).isTrue()
     }
 
     private class FakeDraftRepository(initial: DraftPost) : DraftRepositoryContract {
         private val drafts = MutableStateFlow(mapOf(initial.id to initial))
         val deletedIds = mutableListOf<Long>()
+
+        fun requireDraft(id: Long): DraftPost = drafts.value.getValue(id)
 
         override fun observeAll(): Flow<List<DraftPost>> = drafts.map { it.values.toList() }
 
@@ -226,19 +112,13 @@ class EditorViewModelTest {
     }
 
     private class FakeGitHubPublisher : GitHubPublisherContract {
-        var publishCalls = 0
         var deleteCalls = 0
-        var lastOverwrite = false
 
         override suspend fun publish(
             draft: DraftPost,
             settings: GitHubSettings,
             overwrite: Boolean,
-        ): GitHubPublishResult {
-            publishCalls++
-            lastOverwrite = overwrite
-            return GitHubPublishResult.Success(draft.slug.ifBlank { "slug" })
-        }
+        ): GitHubPublishResult = error("Not used")
 
         override suspend fun deleteRemoteArticle(draft: DraftPost, settings: GitHubSettings): GitHubDeleteResult {
             deleteCalls++

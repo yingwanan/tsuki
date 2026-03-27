@@ -155,7 +155,7 @@ class EditorViewModel(
         val snapshot = draft.value ?: return
         viewModelScope.launch {
             val settings = settings.first()
-            val remoteResult = if (deleteRemote && snapshot.publishState == PublishState.Synced && snapshot.slug.isNotBlank()) {
+            val remoteResult = if (deleteRemote && snapshot.slug.isNotBlank()) {
                 gitHubPublisher.deleteRemoteArticle(snapshot, settings)
             } else {
                 null

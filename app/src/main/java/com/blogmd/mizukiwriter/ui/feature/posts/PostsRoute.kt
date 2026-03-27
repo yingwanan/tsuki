@@ -107,7 +107,7 @@ fun PostsRoute(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("确认删除《${draft.title.ifBlank { "未命名文章" }}》吗？")
-                    if (draft.publishState == PublishState.Synced && draft.slug.isNotBlank()) {
+                    if (draft.slug.isNotBlank()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Checkbox(
                                 checked = deleteRemote,
