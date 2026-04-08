@@ -19,8 +19,22 @@ data class GitHubDeleteRequest(
 )
 
 @Serializable
+data class GitHubContentDocumentResponse(
+    val sha: String = "",
+    val name: String = "",
+    val path: String = "",
+    val type: String = "file",
+    val content: String = "",
+    val encoding: String? = null,
+    @SerialName("download_url") val downloadUrl: String? = null,
+)
+
+@Serializable
 data class GitHubContentResponse(
     val sha: String = "",
+    val name: String = "",
+    val path: String = "",
+    val type: String = "file",
     val content: GitHubContentDescriptor? = null,
 )
 
@@ -57,6 +71,13 @@ data class GitHubBlobRequest(
 @Serializable
 data class GitHubBlobResponse(
     val sha: String = "",
+)
+
+@Serializable
+data class GitHubBlobContentResponse(
+    val sha: String = "",
+    val content: String = "",
+    val encoding: String = "base64",
 )
 
 @Serializable
@@ -99,4 +120,35 @@ data class GitHubCreateCommitRequest(
 data class GitHubUpdateRefRequest(
     val sha: String,
     val force: Boolean = false,
+)
+
+@Serializable
+data class GitHubCreateRefRequest(
+    val ref: String,
+    val sha: String,
+)
+
+@Serializable
+data class GitHubRepositoryResponse(
+    val name: String = "",
+    @SerialName("full_name") val fullName: String = "",
+    @SerialName("default_branch") val defaultBranch: String = "master",
+    val private: Boolean = false,
+)
+
+@Serializable
+data class GitHubWorkflowRunsResponse(
+    @SerialName("workflow_runs") val workflowRuns: List<GitHubWorkflowRun> = emptyList(),
+)
+
+@Serializable
+data class GitHubWorkflowRun(
+    val id: Long = 0L,
+    val name: String = "",
+    val status: String = "",
+    val conclusion: String? = null,
+    @SerialName("html_url") val htmlUrl: String = "",
+    @SerialName("head_branch") val headBranch: String = "",
+    @SerialName("head_sha") val headSha: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
 )
