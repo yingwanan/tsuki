@@ -47,4 +47,25 @@ class MarkdownFrontmatterEditorTest {
         assertThat(updated).contains("tags: [Diary, Remote]")
         assertThat(updated).contains("## Body")
     }
+
+    @Test
+    fun `parses quoted description with colon and apostrophe`() {
+        val document = MarkdownFrontmatterEditor.parse(
+            """
+            ---
+            title: "中文标题"
+            description: "Girl's gunfight: React Hooks, Context, and state"
+            tags: ["A", "B"]
+            ---
+
+            正文
+            """.trimIndent(),
+        )
+
+        val frontmatter = document.frontmatter
+        assertThat((frontmatter["title"] as JsonPrimitive).content).isEqualTo("中文标题")
+        assertThat((frontmatter["description"] as JsonPrimitive).content)
+            .isEqualTo("Girl's gunfight: React Hooks, Context, and state")
+        assertThat((frontmatter["tags"] as JsonArray).size).isEqualTo(2)
+    }
 }

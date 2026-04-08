@@ -51,7 +51,10 @@ class ContentViewModelTest {
         runCurrent()
 
         assertThat(viewModel.localDrafts.value).hasSize(1)
-        assertThat(viewModel.remoteItems.value.single().path).isEqualTo("src/content/posts/hello-world.md")
+        val remote = viewModel.remoteItems.value.single()
+        assertThat(remote.path).isEqualTo("src/content/posts/hello-world.md")
+        assertThat(remote.title).isEqualTo("远程标题")
+        assertThat(remote.description).isEqualTo("远程简介")
     }
 
     private class FakeDraftRepository : DraftRepositoryContract {
@@ -76,7 +79,13 @@ class ContentViewModelTest {
     private class FakeWorkspaceRepository : GitHubWorkspaceRepositoryContract {
         override suspend fun listRemoteContent(settings: GitHubSettings) = listOf(
             RemoteContentItem("src/content/spec/about.md", "sha", RemoteContentType.Page),
-            RemoteContentItem("src/content/posts/hello-world.md", "sha-post", RemoteContentType.Post),
+            RemoteContentItem(
+                path = "src/content/posts/hello-world.md",
+                sha = "sha-post",
+                type = RemoteContentType.Post,
+                title = "远程标题",
+                description = "远程简介",
+            ),
         )
 
         override suspend fun loadFile(settings: GitHubSettings, path: String) = RemoteFileDocument(path, "sha", "", "main")

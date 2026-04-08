@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.blogmd.mizukiwriter.domain.MizukiCatalog
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
 import kotlinx.serialization.json.JsonArray
@@ -61,6 +62,9 @@ fun RepositoryFileRoute(
     var markdownFrontmatter by remember(state.markdownFrontmatter) { mutableStateOf(state.markdownFrontmatter) }
     var markdownBody by remember(state.markdownBody) { mutableStateOf(state.markdownBody) }
     var bindingValue by remember(state.bindingValue) { mutableStateOf(state.bindingValue) }
+    val labelResolver: (String) -> String = remember(path, bindingName) {
+        { key -> MizukiCatalog.resolveFieldLabel(path = path, bindingName = bindingName, key = key) }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refresh()
@@ -102,9 +106,9 @@ fun RepositoryFileRoute(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text(path, style = MaterialTheme.typography.titleSmall)
+                        Text("仓库路径：$path", style = MaterialTheme.typography.titleSmall)
                         Text("当前分支：${state.branch.ifBlank { "未知" }}", style = MaterialTheme.typography.bodySmall)
-                        Text("远程内容已加载到本地编辑态，只有点击右上角上传才会推送 GitHub。", style = MaterialTheme.typography.bodySmall)
+                        Text("远程内容已加载到本地编辑态，只有点击右上角上传才会推送到仓库。", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -116,10 +120,11 @@ fun RepositoryFileRoute(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Text("Frontmatter", style = MaterialTheme.typography.titleMedium)
+                                Text("页面信息", style = MaterialTheme.typography.titleMedium)
                                 JsonElementEditor(
-                                    label = "frontmatter",
+                                    label = MizukiCatalog.rootSectionLabel(path = path, bindingName = bindingName),
                                     value = markdownFrontmatter,
+                                    labelResolver = labelResolver,
                                     onChange = { updated ->
                                         markdownFrontmatter = updated as? JsonObject ?: JsonObject(emptyMap())
                                     },
@@ -152,11 +157,12 @@ fun RepositoryFileRoute(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Text("结构化配置", style = MaterialTheme.typography.titleMedium)
+                                Text("结构化内容", style = MaterialTheme.typography.titleMedium)
                                 bindingValue?.let { currentValue ->
                                     JsonElementEditor(
-                                        label = bindingName ?: "value",
+                                        label = MizukiCatalog.rootSectionLabel(path = path, bindingName = bindingName),
                                         value = currentValue,
+                                        labelResolver = labelResolver,
                                         onChange = { bindingValue = it },
                                     )
                                 }
@@ -195,6 +201,7 @@ fun RepositoryFileRoute(
 private fun JsonElementEditor(
     label: String,
     value: JsonElement,
+    labelResolver: (String) -> String,
     onChange: (JsonElement) -> Unit,
 ) {
     when (value) {
@@ -208,8 +215,9 @@ private fun JsonElementEditor(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             JsonElementEditor(
-                                label = key,
+                                label = labelResolver(key),
                                 value = child,
+                                labelResolver = labelResolver,
                                 onChange = { updatedChild ->
                                     onChange(
                                         JsonObject(
@@ -266,6 +274,7 @@ private fun JsonElementEditor(
                             JsonElementEditor(
                                 label = label,
                                 value = child,
+                                labelResolver = labelResolver,
                                 onChange = { updatedChild ->
                                     onChange(
                                         JsonArray(

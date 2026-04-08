@@ -30,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.blogmd.mizukiwriter.data.github.RemoteContentType
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
 import java.time.Instant
@@ -94,7 +93,7 @@ fun ContentRoute(
                 item {
                     SectionCard(
                         title = "本地草稿",
-                        subtitle = "继续使用本地写作流，点击上传时才推送到 GitHub。",
+                        subtitle = "继续使用本地写作流，点击上传时才推送到仓库。",
                     )
                 }
                 if (localDrafts.isEmpty()) {
@@ -127,8 +126,8 @@ fun ContentRoute(
                 }
                 item {
                     SectionCard(
-                        title = "GitHub 远程文章",
-                        subtitle = "远程正式内容来自 GitHub，点击后进入结构化远程编辑页。",
+                        title = "仓库远程文章",
+                        subtitle = "远程正式内容直接来自仓库，点击后进入结构化远程编辑页。",
                     )
                 }
                 if (remoteItems.isEmpty()) {
@@ -150,16 +149,23 @@ fun ContentRoute(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
-                                    Text(item.path, style = MaterialTheme.typography.titleSmall)
                                     Text(
-                                        if (item.type == RemoteContentType.Post) "文章" else "页面",
+                                        item.title ?: item.path.substringAfterLast('/').substringBeforeLast('.'),
+                                        style = MaterialTheme.typography.titleSmall,
+                                    )
+                                    Text(
+                                        item.description ?: "暂无简介",
                                         style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    Text(
+                                        "仓库路径：${item.path}",
+                                        style = MaterialTheme.typography.labelSmall,
                                     )
                                 }
                                 TextButton(onClick = {
                                     onOpenRemoteFile(
                                         item.path,
-                                        item.path.substringAfterLast('/').substringBeforeLast('.'),
+                                        item.title ?: item.path.substringAfterLast('/').substringBeforeLast('.'),
                                     )
                                 }) {
                                     Icon(Icons.Outlined.EditNote, contentDescription = null)

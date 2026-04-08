@@ -2,6 +2,7 @@ package com.blogmd.mizukiwriter.data.github
 
 import com.blogmd.mizukiwriter.data.settings.GitHubSettings
 import com.blogmd.mizukiwriter.domain.GitBranchTargetResolver
+import com.blogmd.mizukiwriter.domain.MarkdownFrontmatterEditor
 import com.blogmd.mizukiwriter.domain.MizukiConfigParser
 import com.blogmd.mizukiwriter.domain.SiteConfigSnapshot
 import retrofit2.HttpException
@@ -11,6 +12,8 @@ data class RemoteContentItem(
     val path: String,
     val sha: String,
     val type: RemoteContentType,
+    val title: String? = null,
+    val description: String? = null,
 )
 
 enum class RemoteContentType {
@@ -48,8 +51,21 @@ class GitHubWorkspaceRepository(
         return tree.tree.mapNotNull { node ->
             if (node.type != "blob" || node.sha == null) return@mapNotNull null
             when {
-                node.path.startsWith("${settings.postsBasePath.trim('/')}/") && node.path.endsWith(".md") ->
-                    RemoteContentItem(node.path, node.sha, RemoteContentType.Post)
+                node.path.startsWith("${settings.postsBasePath.trim('/')}/") && node.path.endsWith(".md") -> {
+                    val metadata = loadMarkdownMetadata(
+                        gateway = gateway,
+                        settings = settings,
+                        branch = branch,
+                        path = node.path,
+                    )
+                    RemoteContentItem(
+                        path = node.path,
+                        sha = node.sha,
+                        type = RemoteContentType.Post,
+                        title = metadata.first ?: node.path.substringAfterLast('/').substringBeforeLast('.'),
+                        description = metadata.second,
+                    )
+                }
 
                 node.path.startsWith("${settings.pagesBasePath.trim('/')}/") && node.path.endsWith(".md") ->
                     RemoteContentItem(node.path, node.sha, RemoteContentType.Page)
@@ -57,6 +73,21 @@ class GitHubWorkspaceRepository(
                 else -> null
             }
         }
+    }
+
+    private suspend fun loadMarkdownMetadata(
+        gateway: GitHubGateway,
+        settings: GitHubSettings,
+        branch: String,
+        path: String,
+    ): Pair<String?, String?> {
+        return runCatching {
+            val content = gateway.getContent(settings.owner, settings.repo, path, branch).decodeContent()
+            val frontmatter = MarkdownFrontmatterEditor.parse(content).frontmatter
+            val title = frontmatter["title"]?.jsonPrimitiveContent()
+            val description = frontmatter["description"]?.jsonPrimitiveContent()
+            title to description
+        }.getOrDefault(null to null)
     }
 
     override suspend fun loadFile(settings: GitHubSettings, path: String): RemoteFileDocument {
@@ -223,4 +254,9 @@ private fun GitHubContentDocumentResponse.decodeContent(): String {
 private fun GitHubBlobContentResponse.decodeContent(): String {
     if (encoding != "base64") return content
     return String(Base64.getMimeDecoder().decode(content))
+}
+
+private fun kotlinx.serialization.json.JsonElement.jsonPrimitiveContent(): String? {
+    val primitive = this as? kotlinx.serialization.json.JsonPrimitive ?: return null
+    return primitive.content
 }

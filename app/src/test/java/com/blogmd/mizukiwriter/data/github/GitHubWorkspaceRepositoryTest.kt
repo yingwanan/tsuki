@@ -24,6 +24,25 @@ class GitHubWorkspaceRepositoryTest {
                     GitHubTreeNode(path = "README.md", type = "blob", sha = "ignored"),
                 ),
             )
+            contentsByPath["src/content/posts/hello/index.md"] = GitHubContentDocumentResponse(
+                sha = "post-sha",
+                path = "src/content/posts/hello/index.md",
+                content = """
+                    ---
+                    title: "中文标题"
+                    description: "这里是简介"
+                    ---
+
+                    正文
+                """.trimIndent().encodeBase64ForTest(),
+                encoding = "base64",
+            )
+            contentsByPath["src/content/spec/about.md"] = GitHubContentDocumentResponse(
+                sha = "page-sha",
+                path = "src/content/spec/about.md",
+                content = "# About".encodeBase64ForTest(),
+                encoding = "base64",
+            )
         }
         val repository = GitHubWorkspaceRepository { gateway }
 
@@ -35,6 +54,8 @@ class GitHubWorkspaceRepositoryTest {
             "src/content/posts/hello/index.md",
             "src/content/spec/about.md",
         )
+        assertThat(items.first { it.type == RemoteContentType.Post }.title).isEqualTo("中文标题")
+        assertThat(items.first { it.type == RemoteContentType.Post }.description).isEqualTo("这里是简介")
     }
 
     @Test
@@ -93,6 +114,7 @@ class GitHubWorkspaceRepositoryTest {
         var repository = GitHubRepositoryResponse(defaultBranch = "master")
         var tree = GitHubTreeResponse()
         var content = GitHubContentDocumentResponse()
+        val contentsByPath = mutableMapOf<String, GitHubContentDocumentResponse>()
         val missingRefs = mutableSetOf<String>()
         val createdRefs = mutableListOf<GitHubCreateRefRequest>()
         val putRequests = mutableListOf<GitHubContentRequest>()
@@ -102,7 +124,7 @@ class GitHubWorkspaceRepositoryTest {
             repo: String,
             path: String,
             ref: String,
-        ): GitHubContentDocumentResponse = content
+        ): GitHubContentDocumentResponse = contentsByPath[path] ?: content
 
         override suspend fun putContent(
             owner: String,
@@ -175,3 +197,5 @@ class GitHubWorkspaceRepositoryTest {
         }
     }
 }
+
+private fun String.encodeBase64ForTest(): String = java.util.Base64.getEncoder().encodeToString(encodeToByteArray())

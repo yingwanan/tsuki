@@ -54,7 +54,7 @@ fun ConfigDetailsRoute(
                     ) {
                         Text(item.title, style = MaterialTheme.typography.titleMedium)
                         Text(item.description, style = MaterialTheme.typography.bodySmall)
-                        Text(item.path, style = MaterialTheme.typography.labelSmall)
+                        Text("仓库路径：${item.path}", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

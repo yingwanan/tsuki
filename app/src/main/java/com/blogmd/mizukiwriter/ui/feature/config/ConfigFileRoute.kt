@@ -53,7 +53,7 @@ fun ConfigFileRoute(
                     ) {
                         Text(item.title, style = MaterialTheme.typography.titleMedium)
                         Text(item.description, style = MaterialTheme.typography.bodySmall)
-                        Text("绑定名：${item.bindingName}", style = MaterialTheme.typography.labelSmall)
+                        Text("配置代号：${item.bindingName}", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

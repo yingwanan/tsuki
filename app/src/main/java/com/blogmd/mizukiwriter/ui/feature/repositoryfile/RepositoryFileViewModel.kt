@@ -101,9 +101,10 @@ class RepositoryFileViewModel(
                     }
                 }
             }.onFailure { error ->
+                val targetName = bindingName ?: path
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    message = error.message ?: "加载远程文件失败",
+                    message = error.message ?: "解析远程内容失败：$targetName",
                 )
             }
         }

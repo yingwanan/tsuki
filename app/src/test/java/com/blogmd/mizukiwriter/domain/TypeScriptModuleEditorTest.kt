@@ -108,4 +108,24 @@ class TypeScriptModuleEditorTest {
         assertThat(updated).contains("links: [LinkPreset.Home, LinkPreset.Archive]")
         assertThat(updated).doesNotContain("\"__ts_expr__:LinkPreset.Home\"")
     }
+
+    @Test
+    fun `parses strings containing apostrophes and hook keywords without treating them as expressions`() {
+        val source = """
+            export const animeData = [
+                {
+                    title: "Lycoris Recoil",
+                    description: "Girl's gunfight",
+                    tags: ["Hooks, Context, and state"],
+                },
+            ];
+        """.trimIndent()
+
+        val document = TypeScriptModuleEditor.parseBinding(source, "animeData")
+        val items = document.value as JsonArray
+        val first = items.first() as JsonObject
+
+        assertThat((first["description"] as JsonPrimitive).content).isEqualTo("Girl's gunfight")
+        assertThat((first["tags"] as JsonArray).first()).isEqualTo(JsonPrimitive("Hooks, Context, and state"))
+    }
 }
