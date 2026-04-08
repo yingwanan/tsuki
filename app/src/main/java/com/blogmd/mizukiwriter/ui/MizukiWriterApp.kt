@@ -74,7 +74,7 @@ fun MizukiWriterApp() {
                     onCreateDraft = { navController.navigate(AppDestination.Editor.createRoute(0L)) },
                     onOpenDraft = { draftId -> navController.navigate(AppDestination.Editor.createRoute(draftId)) },
                     onOpenRemoteFile = { path, title ->
-                        navController.navigate(AppDestination.RepositoryFile.createRoute(path = path, title = title))
+                        navController.navigate(AppDestination.EditorRemote.createRoute(path = path, title = title))
                     },
                 )
             }
@@ -116,6 +116,26 @@ fun MizukiWriterApp() {
                 val draftId = backStackEntry.arguments?.getLong("draftId") ?: 0L
                 EditorRoute(
                     draftId = draftId,
+                    onBack = { navController.navigateUp() },
+                )
+            }
+            composable(
+                route = AppDestination.EditorRemote.route,
+                arguments = listOf(
+                    navArgument("encodedPath") { type = NavType.StringType },
+                    navArgument("title") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    },
+                ),
+            ) { backStackEntry ->
+                val encodedPath = backStackEntry.arguments?.getString("encodedPath").orEmpty()
+                val title = backStackEntry.arguments?.getString("title").orEmpty().ifBlank { null }
+                EditorRoute(
+                    draftId = 0L,
+                    remoteArticlePath = Uri.decode(encodedPath),
+                    remoteArticleTitle = title?.let(Uri::decode),
                     onBack = { navController.navigateUp() },
                 )
             }

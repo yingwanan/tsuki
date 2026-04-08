@@ -23,6 +23,18 @@ sealed class AppDestination(
     data object Editor : AppDestination("editor/{draftId}", "editor", "编辑", Icons.Outlined.EditNote) {
         fun createRoute(draftId: Long): String = "editor/$draftId"
     }
+    data object EditorRemote : AppDestination(
+        "editor-remote/{encodedPath}?title={title}",
+        "editor-remote",
+        "远程编辑",
+        Icons.Outlined.EditNote,
+    ) {
+        fun createRoute(path: String, title: String? = null): String {
+            val encodedPath = Uri.encode(path)
+            val encodedTitle = Uri.encode(title.orEmpty())
+            return "editor-remote/$encodedPath?title=$encodedTitle"
+        }
+    }
     data object RepositoryFile : AppDestination(
         "repository-file/{encodedPath}?binding={binding}&title={title}",
         "repository-file",

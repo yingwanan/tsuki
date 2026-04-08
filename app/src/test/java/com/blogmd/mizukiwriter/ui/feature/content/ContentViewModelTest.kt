@@ -1,10 +1,14 @@
 package com.blogmd.mizukiwriter.ui.feature.content
 
 import com.blogmd.mizukiwriter.data.github.GitHubRepositoryResponse
+import com.blogmd.mizukiwriter.data.github.GitHubDeleteResult
+import com.blogmd.mizukiwriter.data.github.GitHubPublishResult
+import com.blogmd.mizukiwriter.data.github.GitHubPublisherContract
 import com.blogmd.mizukiwriter.data.github.GitHubWorkspaceRepositoryContract
 import com.blogmd.mizukiwriter.data.github.RemoteContentItem
 import com.blogmd.mizukiwriter.data.github.RemoteContentType
 import com.blogmd.mizukiwriter.data.github.RemoteFileDocument
+import com.blogmd.mizukiwriter.data.media.AssetStorageContract
 import com.blogmd.mizukiwriter.data.model.DraftPost
 import com.blogmd.mizukiwriter.data.repository.DraftRepositoryContract
 import com.blogmd.mizukiwriter.data.settings.GitHubSettings
@@ -43,6 +47,8 @@ class ContentViewModelTest {
         val viewModel = ContentViewModel(
             draftRepository = FakeDraftRepository(),
             settingsRepository = FakeSettingsRepository(),
+            assetStorage = FakeAssetStorage(),
+            gitHubPublisher = FakeGitHubPublisher(),
             workspaceRepository = FakeWorkspaceRepository(),
         )
 
@@ -51,13 +57,55 @@ class ContentViewModelTest {
         runCurrent()
 
         assertThat(viewModel.localDrafts.value).hasSize(1)
-        val remote = viewModel.remoteItems.value.single()
+        assertThat(viewModel.remoteItems.value).hasSize(2)
+        val remote = viewModel.remoteItems.value.first()
         assertThat(remote.path).isEqualTo("src/content/posts/hello-world.md")
         assertThat(remote.title).isEqualTo("远程标题")
         assertThat(remote.description).isEqualTo("远程简介")
+        assertThat(viewModel.remoteItems.value.last().draft).isTrue()
+    }
+
+    @Test
+    fun `deleteLocalDraft removes local draft assets`() = runTest(dispatcher) {
+        val draftRepository = FakeDraftRepository()
+        val assetStorage = FakeAssetStorage()
+        val viewModel = ContentViewModel(
+            draftRepository = draftRepository,
+            settingsRepository = FakeSettingsRepository(),
+            assetStorage = assetStorage,
+            gitHubPublisher = FakeGitHubPublisher(),
+            workspaceRepository = FakeWorkspaceRepository(),
+        )
+
+        runCurrent()
+        viewModel.deleteLocalDraft(1L)
+        runCurrent()
+
+        assertThat(draftRepository.deletedIds).containsExactly(1L)
+        assertThat(assetStorage.deletedAssetIds).containsExactly(1L)
+    }
+
+    @Test
+    fun `deleteRemoteArticle delegates exact remote path`() = runTest(dispatcher) {
+        val publisher = FakeGitHubPublisher()
+        val viewModel = ContentViewModel(
+            draftRepository = FakeDraftRepository(),
+            settingsRepository = FakeSettingsRepository(),
+            assetStorage = FakeAssetStorage(),
+            gitHubPublisher = publisher,
+            workspaceRepository = FakeWorkspaceRepository(),
+        )
+
+        runCurrent()
+        viewModel.deleteRemoteArticle("src/content/posts/hello-world/index.md")
+        runCurrent()
+
+        assertThat(publisher.deletedRemotePaths).containsExactly("src/content/posts/hello-world/index.md")
     }
 
     private class FakeDraftRepository : DraftRepositoryContract {
+        val deletedIds = mutableListOf<Long>()
+
         override fun observeAll(): Flow<List<DraftPost>> = flowOf(listOf(DraftPost(id = 1L, title = "Draft")))
         override fun observeById(id: Long): Flow<DraftPost?> = flowOf(null)
         override suspend fun createBlankDraft(): Long = 0L
@@ -65,7 +113,9 @@ class ContentViewModelTest {
         override suspend fun save(draft: DraftPost): Long = draft.id
         override suspend fun markPublishSuccess(draft: DraftPost, slug: String) = Unit
         override suspend fun markPublishFailure(draft: DraftPost, message: String) = Unit
-        override suspend fun delete(draftId: Long) = Unit
+        override suspend fun delete(draftId: Long) {
+            deletedIds += draftId
+        }
     }
 
     private class FakeSettingsRepository : SettingsRepositoryContract {
@@ -74,6 +124,54 @@ class ContentViewModelTest {
         )
 
         override suspend fun save(settings: GitHubSettings) = Unit
+    }
+
+    private class FakeAssetStorage : AssetStorageContract {
+        val deletedAssetIds = mutableListOf<Long>()
+
+        override fun importAsset(
+            draftId: Long,
+            sourceUri: android.net.Uri,
+            resolver: android.content.ContentResolver,
+            preferredBaseName: String?,
+        ): String = error("Not used")
+
+        override fun listAssetNames(draftId: Long): List<String> = emptyList()
+
+        override fun listAssetFiles(draftId: Long): List<java.io.File> = emptyList()
+
+        override fun deleteDraftAssets(draftId: Long) {
+            deletedAssetIds += draftId
+        }
+    }
+
+    private class FakeGitHubPublisher : GitHubPublisherContract {
+        val deletedRemotePaths = mutableListOf<String>()
+
+        override suspend fun publish(
+            draft: DraftPost,
+            settings: GitHubSettings,
+            overwrite: Boolean,
+        ): GitHubPublishResult = error("Not used")
+
+        override suspend fun publishRemoteArticle(
+            draft: DraftPost,
+            settings: GitHubSettings,
+            remotePath: String,
+        ): GitHubPublishResult = error("Not used")
+
+        override suspend fun deleteRemoteArticle(
+            draft: DraftPost,
+            settings: GitHubSettings,
+        ): GitHubDeleteResult = error("Not used")
+
+        override suspend fun deleteRemoteArticleByPath(
+            articlePath: String,
+            settings: GitHubSettings,
+        ): GitHubDeleteResult {
+            deletedRemotePaths += articlePath
+            return GitHubDeleteResult.Success(articlePath)
+        }
     }
 
     private class FakeWorkspaceRepository : GitHubWorkspaceRepositoryContract {
@@ -85,6 +183,14 @@ class ContentViewModelTest {
                 type = RemoteContentType.Post,
                 title = "远程标题",
                 description = "远程简介",
+            ),
+            RemoteContentItem(
+                path = "src/content/posts/draft-note.md",
+                sha = "sha-draft",
+                type = RemoteContentType.Post,
+                title = "远程草稿",
+                description = "未发布",
+                draft = true,
             ),
         )
 

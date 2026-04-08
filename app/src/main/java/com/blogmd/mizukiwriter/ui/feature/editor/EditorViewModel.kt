@@ -8,41 +8,53 @@ import androidx.lifecycle.viewModelScope
 import com.blogmd.mizukiwriter.data.github.GitHubDeleteResult
 import com.blogmd.mizukiwriter.data.github.GitHubPublishResult
 import com.blogmd.mizukiwriter.data.github.GitHubPublisherContract
+import com.blogmd.mizukiwriter.data.github.GitHubWorkspaceRepositoryContract
 import com.blogmd.mizukiwriter.data.media.AssetStorageContract
 import com.blogmd.mizukiwriter.data.model.DraftPost
 import com.blogmd.mizukiwriter.data.model.PublishState
 import com.blogmd.mizukiwriter.data.repository.DraftRepositoryContract
 import com.blogmd.mizukiwriter.data.settings.GitHubSettings
 import com.blogmd.mizukiwriter.data.settings.SettingsRepositoryContract
+import com.blogmd.mizukiwriter.domain.RemoteArticleMapper
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EditorViewModel(
     draftId: Long,
+    private val remoteArticlePath: String? = null,
+    private val remoteArticleTitle: String? = null,
     private val draftRepository: DraftRepositoryContract,
     private val settingsRepository: SettingsRepositoryContract,
     private val assetStorage: AssetStorageContract,
     private val gitHubPublisher: GitHubPublisherContract,
+    private val workspaceRepository: GitHubWorkspaceRepositoryContract,
 ) : ViewModel() {
-    private val currentDraftId = MutableStateFlow(draftId)
-    private val repositoryDraft: StateFlow<DraftPost?> = currentDraftId
-        .filter { it > 0L }
-        .flatMapLatest { draftRepository.observeById(it) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val isRemoteSession: Boolean = remoteArticlePath != null
+
+    private val currentDraftId = MutableStateFlow(if (isRemoteSession) 0L else draftId)
+    private val repositoryDraft: StateFlow<DraftPost?> = if (isRemoteSession) {
+        flowOf<DraftPost?>(null).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    } else {
+        currentDraftId
+            .filter { it > 0L }
+            .flatMapLatest { draftRepository.observeById(it) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    }
     private val localDraft = MutableStateFlow<DraftPost?>(null)
     private var delayedSaveJob: Job? = null
 
@@ -62,9 +74,12 @@ class EditorViewModel(
     val draftDeleted: StateFlow<Boolean> = _draftDeleted.asStateFlow()
 
     init {
-        if (draftId == 0L) {
-            viewModelScope.launch {
-                currentDraftId.value = draftRepository.createBlankDraft()
+        when {
+            isRemoteSession -> loadRemoteDraft()
+            draftId == 0L -> {
+                viewModelScope.launch {
+                    currentDraftId.value = draftRepository.createBlankDraft()
+                }
             }
         }
     }
@@ -72,7 +87,11 @@ class EditorViewModel(
     fun updateDraft(transform: (DraftPost) -> DraftPost) {
         val snapshot = draft.value ?: return
         localDraft.value = transform(snapshot)
-        scheduleDelayedSave()
+        if (isRemoteSession) {
+            delayedSaveJob?.cancel()
+        } else {
+            scheduleDelayedSave()
+        }
     }
 
     fun fillPrimaryDatesToday() {
@@ -107,7 +126,7 @@ class EditorViewModel(
         val snapshot = draft.value ?: return
         viewModelScope.launch {
             val relativePath = assetStorage.importAsset(
-                draftId = snapshot.id,
+                draftId = resolveAssetDraftId(snapshot),
                 sourceUri = uri,
                 resolver = resolver,
                 preferredBaseName = if (asCover) "cover" else null,
@@ -127,26 +146,12 @@ class EditorViewModel(
             _message.value = it
             return
         }
-        val effectiveOverwrite = overwrite || (
-            snapshot.slug.isNotBlank()
-            )
         viewModelScope.launch {
             val latest = persistDraftNow(snapshot)
-            draftRepository.save(latest.copy(publishState = PublishState.Syncing, lastPublishError = ""))
-            when (val result = gitHubPublisher.publish(latest, settings.first(), effectiveOverwrite)) {
-                is GitHubPublishResult.Success -> {
-                    draftRepository.markPublishSuccess(latest, result.slug)
-                    _message.value = "发布成功：${result.slug}"
-                    _conflictPath.value = null
-                }
-                is GitHubPublishResult.Conflict -> {
-                    draftRepository.markPublishFailure(latest, "远程已存在同名文章")
-                    _conflictPath.value = result.path
-                }
-                is GitHubPublishResult.Failure -> {
-                    draftRepository.markPublishFailure(latest, result.message)
-                    _message.value = result.message
-                }
+            if (isRemoteSession) {
+                publishRemoteArticle(latest)
+            } else {
+                publishLocalDraft(latest, overwrite)
             }
         }
     }
@@ -154,20 +159,117 @@ class EditorViewModel(
     fun deleteDraft(deleteRemote: Boolean) {
         val snapshot = draft.value ?: return
         viewModelScope.launch {
-            val settings = settings.first()
-            val remoteResult = if (deleteRemote && snapshot.slug.isNotBlank()) {
-                gitHubPublisher.deleteRemoteArticle(snapshot, settings)
+            if (isRemoteSession) {
+                deleteRemoteSession(snapshot)
             } else {
-                null
+                deleteLocalSession(snapshot, deleteRemote)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        delayedSaveJob?.cancel()
+        if (isRemoteSession) {
+            assetStorage.deleteDraftAssets(remoteAssetDraftId())
+        }
+        super.onCleared()
+    }
+
+    private fun loadRemoteDraft() {
+        val path = remoteArticlePath ?: return
+        viewModelScope.launch {
+            runCatching {
+                val document = workspaceRepository.loadFile(settings.first(), path)
+                val mappedDraft = RemoteArticleMapper.fromMarkdown(document.path, document.content)
+                mappedDraft.copy(
+                    id = remoteAssetDraftId(),
+                    title = mappedDraft.title.ifBlank {
+                        remoteArticleTitle.orEmpty()
+                    },
+                )
+            }.onSuccess { loadedDraft ->
+                localDraft.value = loadedDraft
+            }.onFailure { error ->
+                _message.value = error.message ?: "远端文章加载失败"
+            }
+        }
+    }
+
+    private suspend fun publishLocalDraft(
+        latest: DraftPost,
+        overwrite: Boolean,
+    ) {
+        draftRepository.save(latest.copy(publishState = PublishState.Syncing, lastPublishError = ""))
+        val effectiveOverwrite = overwrite || latest.slug.isNotBlank()
+        when (val result = gitHubPublisher.publish(latest, settings.first(), effectiveOverwrite)) {
+            is GitHubPublishResult.Success -> {
+                draftRepository.delete(latest.id)
+                assetStorage.deleteDraftAssets(latest.id)
+                _draftDeleted.value = true
+                _message.value = "发布成功：${result.slug}"
+                _conflictPath.value = null
             }
 
-            draftRepository.delete(snapshot.id)
-            assetStorage.deleteDraftAssets(snapshot.id)
-            _draftDeleted.value = true
-            _message.value = when (remoteResult) {
-                is GitHubDeleteResult.Success -> "文章已删除，并已移除 GitHub 远程文章"
-                is GitHubDeleteResult.Failure -> "本地草稿已删除，GitHub 删除失败：${remoteResult.message}"
-                null -> "本地草稿已删除"
+            is GitHubPublishResult.Conflict -> {
+                draftRepository.markPublishFailure(latest, "远程已存在同名文章")
+                _conflictPath.value = result.path
+            }
+
+            is GitHubPublishResult.Failure -> {
+                draftRepository.markPublishFailure(latest, result.message)
+                _message.value = result.message
+            }
+        }
+    }
+
+    private suspend fun publishRemoteArticle(latest: DraftPost) {
+        val path = remoteArticlePath ?: return
+        when (val result = gitHubPublisher.publishRemoteArticle(latest, settings.first(), path)) {
+            is GitHubPublishResult.Success -> {
+                assetStorage.deleteDraftAssets(resolveAssetDraftId(latest))
+                _message.value = "发布成功：${result.slug}"
+                _conflictPath.value = null
+            }
+
+            is GitHubPublishResult.Conflict -> {
+                _conflictPath.value = result.path
+            }
+
+            is GitHubPublishResult.Failure -> {
+                _message.value = result.message
+            }
+        }
+    }
+
+    private suspend fun deleteLocalSession(snapshot: DraftPost, deleteRemote: Boolean) {
+        val settings = settings.first()
+        val remoteResult = if (deleteRemote && snapshot.slug.isNotBlank()) {
+            gitHubPublisher.deleteRemoteArticle(snapshot, settings)
+        } else {
+            null
+        }
+
+        draftRepository.delete(snapshot.id)
+        assetStorage.deleteDraftAssets(snapshot.id)
+        _draftDeleted.value = true
+        _message.value = when (remoteResult) {
+            is GitHubDeleteResult.Success -> "文章已删除，并已移除 GitHub 远程文章"
+            is GitHubDeleteResult.Failure -> "本地草稿已删除，GitHub 删除失败：${remoteResult.message}"
+            null -> "本地草稿已删除"
+        }
+    }
+
+    private suspend fun deleteRemoteSession(snapshot: DraftPost) {
+        val path = remoteArticlePath ?: return
+        when (val result = gitHubPublisher.deleteRemoteArticleByPath(path, settings.first())) {
+            is GitHubDeleteResult.Success -> {
+                assetStorage.deleteDraftAssets(resolveAssetDraftId(snapshot))
+                _draftDeleted.value = true
+                _message.value = "远端文章已删除"
+            }
+
+            is GitHubDeleteResult.Failure -> {
+                _message.value = result.message
             }
         }
     }
@@ -189,9 +291,22 @@ class EditorViewModel(
 
     private suspend fun persistDraftNow(snapshot: DraftPost): DraftPost {
         delayedSaveJob?.cancel()
-        localDraft.value = snapshot
-        draftRepository.save(snapshot)
-        return snapshot
+        val resolved = snapshot.copy(id = resolveAssetDraftId(snapshot))
+        localDraft.value = resolved
+        if (!isRemoteSession) {
+            draftRepository.save(resolved)
+        }
+        return resolved
+    }
+
+    private fun resolveAssetDraftId(snapshot: DraftPost): Long {
+        if (snapshot.id != 0L) return snapshot.id
+        return if (isRemoteSession) remoteAssetDraftId() else currentDraftId.value
+    }
+
+    private fun remoteAssetDraftId(): Long {
+        val path = remoteArticlePath ?: return 0L
+        return -1L * (path.hashCode().toLong().absoluteValue + 1L)
     }
 
     companion object {
@@ -199,19 +314,25 @@ class EditorViewModel(
 
         fun factory(
             draftId: Long,
+            remoteArticlePath: String? = null,
+            remoteArticleTitle: String? = null,
             draftRepository: DraftRepositoryContract,
             settingsRepository: SettingsRepositoryContract,
             assetStorage: AssetStorageContract,
             gitHubPublisher: GitHubPublisherContract,
+            workspaceRepository: GitHubWorkspaceRepositoryContract,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return EditorViewModel(
                     draftId = draftId,
+                    remoteArticlePath = remoteArticlePath,
+                    remoteArticleTitle = remoteArticleTitle,
                     draftRepository = draftRepository,
                     settingsRepository = settingsRepository,
                     assetStorage = assetStorage,
                     gitHubPublisher = gitHubPublisher,
+                    workspaceRepository = workspaceRepository,
                 ) as T
             }
         }

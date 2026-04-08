@@ -44,8 +44,19 @@ interface GitHubPublisherContract {
         overwrite: Boolean = false,
     ): GitHubPublishResult
 
+    suspend fun publishRemoteArticle(
+        draft: DraftPost,
+        settings: GitHubSettings,
+        remotePath: String,
+    ): GitHubPublishResult
+
     suspend fun deleteRemoteArticle(
         draft: DraftPost,
+        settings: GitHubSettings,
+    ): GitHubDeleteResult
+
+    suspend fun deleteRemoteArticleByPath(
+        articlePath: String,
         settings: GitHubSettings,
     ): GitHubDeleteResult
 }
@@ -195,6 +206,148 @@ class GitHubPublisher(
                 GitHubUpdateRefRequest(sha = commit.sha),
             )
             GitHubDeleteResult.Success(slug)
+        } catch (error: HttpException) {
+            GitHubDeleteResult.Failure(error.toReadableMessage("GitHub 删除失败"))
+        } catch (error: Throwable) {
+            GitHubDeleteResult.Failure(error.message ?: "未知删除错误")
+        }
+    }
+
+    override suspend fun publishRemoteArticle(
+        draft: DraftPost,
+        settings: GitHubSettings,
+        remotePath: String,
+    ): GitHubPublishResult {
+        if (settings.owner.isBlank() || settings.repo.isBlank() || settings.personalAccessToken.isBlank()) {
+            return GitHubPublishResult.Failure("请先在设置页填写 GitHub owner、repo 和 PAT")
+        }
+
+        val api = gatewayFactory(settings.personalAccessToken)
+        val branchTarget = resolveBranchTarget(settings)
+        val markdown = buildMarkdown(draft, settings)
+        val assetRoot = remotePath.substringBeforeLast('/', missingDelimiterValue = "")
+
+        return try {
+            val headRef = ensureTargetBranch(api, settings, branchTarget)
+            val headCommitSha = headRef.obj.sha
+            val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
+            val treeEntries = buildList {
+                add(
+                    buildTreeEntry(
+                        api = api,
+                        owner = settings.owner,
+                        repo = settings.repo,
+                        path = remotePath,
+                        content = markdown.encodeToByteArray().toBase64(),
+                    ),
+                )
+                for (file in assetStorage.listAssetFiles(draft.id)) {
+                    val path = if (assetRoot.isBlank()) file.name else "$assetRoot/${file.name}"
+                    add(
+                        buildTreeEntry(
+                            api = api,
+                            owner = settings.owner,
+                            repo = settings.repo,
+                            path = path,
+                            content = file.readAsBase64(),
+                        ),
+                    )
+                }
+            }
+            val tree = api.createTree(
+                settings.owner,
+                settings.repo,
+                GitHubCreateTreeRequest(
+                    baseTree = headCommit.tree.sha,
+                    tree = treeEntries,
+                ),
+            )
+            val commit = api.createCommit(
+                settings.owner,
+                settings.repo,
+                GitHubCreateCommitRequest(
+                    message = "feat(blog): update ${draft.slug.ifBlank { remotePath.substringBeforeLast('/').substringAfterLast('/') }}",
+                    tree = tree.sha,
+                    parents = listOf(headCommitSha),
+                ),
+            )
+            api.updateBranchRef(
+                settings.owner,
+                settings.repo,
+                branchTarget.targetBranch,
+                GitHubUpdateRefRequest(sha = commit.sha),
+            )
+            GitHubPublishResult.Success(draft.slug.ifBlank { remotePath.substringBeforeLast('/').substringAfterLast('/') })
+        } catch (error: HttpException) {
+            GitHubPublishResult.Failure(error.toReadableMessage("GitHub 请求失败"))
+        } catch (error: Throwable) {
+            GitHubPublishResult.Failure(error.message ?: "未知发布错误")
+        }
+    }
+
+    override suspend fun deleteRemoteArticleByPath(
+        articlePath: String,
+        settings: GitHubSettings,
+    ): GitHubDeleteResult {
+        if (settings.owner.isBlank() || settings.repo.isBlank() || settings.personalAccessToken.isBlank()) {
+            return GitHubDeleteResult.Failure("请先在设置页填写 GitHub owner、repo 和 PAT")
+        }
+
+        val api = gatewayFactory(settings.personalAccessToken)
+        val branchTarget = resolveBranchTarget(settings)
+
+        return try {
+            val headRef = ensureTargetBranch(api, settings, branchTarget)
+            val headCommitSha = headRef.obj.sha
+            val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
+            val tree = api.getTree(settings.owner, settings.repo, headCommit.tree.sha)
+            val rootPrefix = if (articlePath.endsWith("/index.md")) {
+                articlePath.substringBeforeLast('/') + "/"
+            } else {
+                null
+            }
+            val remoteFiles = tree.tree.filter { node ->
+                node.type == "blob" && when {
+                    rootPrefix != null -> node.path.startsWith(rootPrefix)
+                    else -> node.path == articlePath
+                }
+            }
+
+            if (remoteFiles.isEmpty()) {
+                return GitHubDeleteResult.Failure("未找到 GitHub 远程文章：$articlePath")
+            }
+
+            val deleteTree = api.createTree(
+                settings.owner,
+                settings.repo,
+                GitHubCreateTreeRequest(
+                    baseTree = headCommit.tree.sha,
+                    tree = remoteFiles.map { node ->
+                        GitHubTreeEntry(
+                            path = node.path,
+                            mode = node.mode,
+                            type = node.type,
+                            sha = null,
+                        )
+                    },
+                ),
+            )
+            val commit = api.createCommit(
+                settings.owner,
+                settings.repo,
+                GitHubCreateCommitRequest(
+                    message = "chore(blog): delete ${articlePath.substringBeforeLast('/').substringAfterLast('/')}",
+                    tree = deleteTree.sha,
+                    parents = listOf(headCommitSha),
+                ),
+            )
+            api.updateBranchRef(
+                settings.owner,
+                settings.repo,
+                branchTarget.targetBranch,
+                GitHubUpdateRefRequest(sha = commit.sha),
+            )
+            GitHubDeleteResult.Success(articlePath.substringBeforeLast('/').substringAfterLast('/'))
         } catch (error: HttpException) {
             GitHubDeleteResult.Failure(error.toReadableMessage("GitHub 删除失败"))
         } catch (error: Throwable) {

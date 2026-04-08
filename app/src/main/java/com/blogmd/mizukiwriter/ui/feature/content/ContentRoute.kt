@@ -1,9 +1,12 @@
 package com.blogmd.mizukiwriter.ui.feature.content
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,30 +14,43 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.blogmd.mizukiwriter.data.github.RemoteContentItem
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+private enum class ContentSourceTab { Local, Remote }
+private enum class RemoteContentTab { Published, Draft }
 
 @Composable
 fun ContentRoute(
@@ -47,6 +63,8 @@ fun ContentRoute(
         factory = ContentViewModel.factory(
             draftRepository = container.draftRepository,
             settingsRepository = container.settingsRepository,
+            assetStorage = container.assetStorage,
+            gitHubPublisher = container.gitHubPublisher,
             workspaceRepository = container.gitHubWorkspaceRepository,
         ),
     )
@@ -54,6 +72,10 @@ fun ContentRoute(
     val remoteItems by viewModel.remoteItems.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var sourceTab by rememberSaveable { mutableStateOf(ContentSourceTab.Local) }
+    var remoteTab by rememberSaveable { mutableStateOf(RemoteContentTab.Published) }
+    var pendingLocalDeleteId by remember { mutableStateOf<Long?>(null) }
+    var pendingRemoteDelete by remember { mutableStateOf<RemoteContentItem?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshRemoteContent()
@@ -64,6 +86,37 @@ fun ContentRoute(
             snackbarHostState.showSnackbar(it)
             viewModel.consumeMessage()
         }
+    }
+
+    val filteredRemoteItems = remoteItems.filter { item ->
+        when (remoteTab) {
+            RemoteContentTab.Published -> !item.draft
+            RemoteContentTab.Draft -> item.draft
+        }
+    }
+
+    pendingLocalDeleteId?.let { draftId ->
+        DeleteConfirmationDialog(
+            title = "删除本地草稿",
+            body = "确认删除这个本地草稿吗？删除后只能从远端重新打开已发布内容。",
+            onConfirm = {
+                viewModel.deleteLocalDraft(draftId)
+                pendingLocalDeleteId = null
+            },
+            onDismiss = { pendingLocalDeleteId = null },
+        )
+    }
+
+    pendingRemoteDelete?.let { item ->
+        DeleteConfirmationDialog(
+            title = "删除远端文章",
+            body = "确认删除《${item.title ?: item.path.substringAfterLast('/').substringBeforeLast('.')}》吗？这会直接删除 GitHub 上的远端内容。",
+            onConfirm = {
+                viewModel.deleteRemoteArticle(item.path)
+                pendingRemoteDelete = null
+            },
+            onDismiss = { pendingRemoteDelete = null },
+        )
     }
 
     PrimaryScreenScaffold(
@@ -82,18 +135,27 @@ fun ContentRoute(
         },
     ) { innerPadding ->
         LazyColumn(
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding() + 8.dp,
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 96.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                SourceSwitchCard(
+                    selectedTab = sourceTab,
+                    onSelect = { sourceTab = it },
+                )
+            }
+
+            if (sourceTab == ContentSourceTab.Local) {
                 item {
                     SectionCard(
                         title = "本地草稿",
-                        subtitle = "继续使用本地写作流，点击上传时才推送到仓库。",
+                        subtitle = "继续离线写作，上传成功后会自动清理本地草稿。右滑卡片可快捷删除。",
                     )
                 }
                 if (localDrafts.isEmpty()) {
@@ -106,77 +168,211 @@ fun ContentRoute(
                     }
                 } else {
                     items(localDrafts, key = { it.id }) { draft ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { onOpenDraft(draft.id) },
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Text(draft.title.ifBlank { "未命名文章" }, style = MaterialTheme.typography.titleMedium)
-                                Text(draft.description.ifBlank { "暂无描述" }, style = MaterialTheme.typography.bodySmall)
-                                Text(
-                                    "修改时间：${draft.modifiedAt.toHumanTime()}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
+                        SwipeDeleteCard(onDelete = { pendingLocalDeleteId = draft.id }) {
+                            ArticleSummaryCard(
+                                title = draft.title.ifBlank { "未命名文章" },
+                                description = draft.description.ifBlank { "暂无描述" },
+                                metaLine = "修改时间：${draft.modifiedAt.toHumanTime()}",
+                                statusLine = "本地草稿",
+                                onClick = { onOpenDraft(draft.id) },
+                            )
                         }
                     }
                 }
+            } else {
                 item {
-                    SectionCard(
-                        title = "仓库远程文章",
-                        subtitle = "远程正式内容直接来自仓库，点击后进入结构化远程编辑页。",
+                    RemoteFilterCard(
+                        selectedTab = remoteTab,
+                        publishedCount = remoteItems.count { !it.draft },
+                        draftCount = remoteItems.count { it.draft },
+                        onSelect = { remoteTab = it },
                     )
                 }
-                if (remoteItems.isEmpty()) {
+                item {
+                    SectionCard(
+                        title = "远端文章",
+                        subtitle = "远端内容直接来自 GitHub。点击进入完整编辑器，右滑可快捷删除。",
+                    )
+                }
+                if (filteredRemoteItems.isEmpty()) {
                     item {
                         EmptyCard(
-                            title = "暂无远程内容",
+                            title = if (remoteTab == RemoteContentTab.Published) "暂无已发布文章" else "暂无远端草稿",
                             actionText = "重新扫描",
                             onAction = viewModel::refreshRemoteContent,
                         )
                     }
                 } else {
-                    items(remoteItems, key = { it.path }) { item ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    Text(
-                                        item.title ?: item.path.substringAfterLast('/').substringBeforeLast('.'),
-                                        style = MaterialTheme.typography.titleSmall,
-                                    )
-                                    Text(
-                                        item.description ?: "暂无简介",
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                    Text(
-                                        "仓库路径：${item.path}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                                TextButton(onClick = {
+                    items(filteredRemoteItems, key = { it.path }) { item ->
+                        SwipeDeleteCard(onDelete = { pendingRemoteDelete = item }) {
+                            ArticleSummaryCard(
+                                title = item.title ?: item.path.substringAfterLast('/').substringBeforeLast('.'),
+                                description = item.description ?: "暂无简介",
+                                metaLine = "仓库路径：${item.path}",
+                                statusLine = if (item.draft) "远端草稿" else "已发布",
+                                onClick = {
                                     onOpenRemoteFile(
                                         item.path,
                                         item.title ?: item.path.substringAfterLast('/').substringBeforeLast('.'),
                                     )
-                                }) {
-                                    Icon(Icons.Outlined.EditNote, contentDescription = null)
-                                    Text("打开", modifier = Modifier.padding(start = 4.dp))
-                                }
-                            }
+                                },
+                            )
                         }
                     }
                 }
+            }
         }
     }
+}
+
+@Composable
+private fun SourceSwitchCard(
+    selectedTab: ContentSourceTab,
+    onSelect: (ContentSourceTab) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("内容来源", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedTab == ContentSourceTab.Local,
+                    onClick = { onSelect(ContentSourceTab.Local) },
+                    label = { Text("本地草稿") },
+                )
+                FilterChip(
+                    selected = selectedTab == ContentSourceTab.Remote,
+                    onClick = { onSelect(ContentSourceTab.Remote) },
+                    label = { Text("远端文章") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteFilterCard(
+    selectedTab: RemoteContentTab,
+    publishedCount: Int,
+    draftCount: Int,
+    onSelect: (RemoteContentTab) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("远端分类", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedTab == RemoteContentTab.Published,
+                    onClick = { onSelect(RemoteContentTab.Published) },
+                    label = { Text("已发布 $publishedCount") },
+                )
+                FilterChip(
+                    selected = selectedTab == RemoteContentTab.Draft,
+                    onClick = { onSelect(RemoteContentTab.Draft) },
+                    label = { Text("远端草稿 $draftCount") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SwipeDeleteCard(
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+            }
+            false
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.DeleteOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        "删除",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        },
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun ArticleSummaryCard(
+    title: String,
+    description: String,
+    metaLine: String,
+    statusLine: String,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall)
+            Text(statusLine, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(metaLine, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun DeleteConfirmationDialog(
+    title: String,
+    body: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("确认删除")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+        title = { Text(title) },
+        text = { Text(body) },
+    )
 }
 
 @Composable

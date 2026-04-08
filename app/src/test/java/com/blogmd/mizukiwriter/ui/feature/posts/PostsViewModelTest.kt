@@ -120,10 +120,21 @@ class PostsViewModelTest {
             overwrite: Boolean,
         ): GitHubPublishResult = error("Not used")
 
+        override suspend fun publishRemoteArticle(
+            draft: DraftPost,
+            settings: GitHubSettings,
+            remotePath: String,
+        ): GitHubPublishResult = error("Not used")
+
         override suspend fun deleteRemoteArticle(draft: DraftPost, settings: GitHubSettings): GitHubDeleteResult {
             deleteCalls++
             return GitHubDeleteResult.Success(draft.slug)
         }
+
+        override suspend fun deleteRemoteArticleByPath(
+            articlePath: String,
+            settings: GitHubSettings,
+        ): GitHubDeleteResult = error("Not used")
     }
 
     private class FakeAssetStorage : AssetStorageContract {

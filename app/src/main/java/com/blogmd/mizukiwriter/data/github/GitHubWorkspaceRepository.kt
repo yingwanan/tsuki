@@ -14,6 +14,7 @@ data class RemoteContentItem(
     val type: RemoteContentType,
     val title: String? = null,
     val description: String? = null,
+    val draft: Boolean = false,
 )
 
 enum class RemoteContentType {
@@ -62,8 +63,9 @@ class GitHubWorkspaceRepository(
                         path = node.path,
                         sha = node.sha,
                         type = RemoteContentType.Post,
-                        title = metadata.first ?: node.path.substringAfterLast('/').substringBeforeLast('.'),
-                        description = metadata.second,
+                        title = metadata.title ?: node.path.substringAfterLast('/').substringBeforeLast('.'),
+                        description = metadata.description,
+                        draft = metadata.draft,
                     )
                 }
 
@@ -80,14 +82,16 @@ class GitHubWorkspaceRepository(
         settings: GitHubSettings,
         branch: String,
         path: String,
-    ): Pair<String?, String?> {
+    ): RemoteMarkdownMetadata {
         return runCatching {
             val content = gateway.getContent(settings.owner, settings.repo, path, branch).decodeContent()
             val frontmatter = MarkdownFrontmatterEditor.parse(content).frontmatter
-            val title = frontmatter["title"]?.jsonPrimitiveContent()
-            val description = frontmatter["description"]?.jsonPrimitiveContent()
-            title to description
-        }.getOrDefault(null to null)
+            RemoteMarkdownMetadata(
+                title = frontmatter["title"]?.jsonPrimitiveContent(),
+                description = frontmatter["description"]?.jsonPrimitiveContent(),
+                draft = frontmatter["draft"]?.jsonPrimitiveBoolean() ?: false,
+            )
+        }.getOrDefault(RemoteMarkdownMetadata())
     }
 
     override suspend fun loadFile(settings: GitHubSettings, path: String): RemoteFileDocument {
@@ -216,6 +220,12 @@ class GitHubWorkspaceRepository(
     ).targetBranch
 }
 
+private data class RemoteMarkdownMetadata(
+    val title: String? = null,
+    val description: String? = null,
+    val draft: Boolean = false,
+)
+
 interface GitHubWorkspaceRepositoryContract {
     suspend fun listRemoteContent(settings: GitHubSettings): List<RemoteContentItem>
     suspend fun loadFile(settings: GitHubSettings, path: String): RemoteFileDocument
@@ -259,4 +269,9 @@ private fun GitHubBlobContentResponse.decodeContent(): String {
 private fun kotlinx.serialization.json.JsonElement.jsonPrimitiveContent(): String? {
     val primitive = this as? kotlinx.serialization.json.JsonPrimitive ?: return null
     return primitive.content
+}
+
+private fun kotlinx.serialization.json.JsonElement.jsonPrimitiveBoolean(): Boolean? {
+    val primitive = this as? kotlinx.serialization.json.JsonPrimitive ?: return null
+    return primitive.content.toBooleanStrictOrNull()
 }

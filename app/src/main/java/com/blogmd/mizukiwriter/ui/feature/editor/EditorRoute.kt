@@ -90,19 +90,25 @@ private enum class PickerTarget { Cover, Inline }
 @Composable
 fun EditorRoute(
     draftId: Long,
+    remoteArticlePath: String? = null,
+    remoteArticleTitle: String? = null,
     onBack: () -> Unit,
 ) {
     val container = LocalContext.current.appContainer
     val viewModel: EditorViewModel = viewModel(
-        key = "editor-$draftId",
+        key = "editor-$draftId-${remoteArticlePath.orEmpty()}",
         factory = EditorViewModel.factory(
             draftId = draftId,
+            remoteArticlePath = remoteArticlePath,
+            remoteArticleTitle = remoteArticleTitle,
             draftRepository = container.draftRepository,
             settingsRepository = container.settingsRepository,
             assetStorage = container.assetStorage,
             gitHubPublisher = container.gitHubPublisher,
+            workspaceRepository = container.gitHubWorkspaceRepository,
         ),
     )
+    val isRemoteSession = viewModel.isRemoteSession
     val draft by viewModel.draft.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val message by viewModel.message.collectAsState()
@@ -137,7 +143,7 @@ fun EditorRoute(
     var advancedExpanded by remember(currentDraft.id) { mutableStateOf(false) }
     var pendingPickerTarget by remember { mutableStateOf(PickerTarget.Inline) }
     var confirmDelete by remember { mutableStateOf(false) }
-    var deleteRemote by remember(currentDraft.id) { mutableStateOf(false) }
+    var deleteRemote by remember(currentDraft.id, isRemoteSession) { mutableStateOf(false) }
     var bodyValue by remember(currentDraft.id) { mutableStateOf(TextFieldValue(currentDraft.body)) }
     var previewContent by remember(currentDraft.id) {
         mutableStateOf(previewMarkdown(currentDraft, settings.defaultAuthor))
@@ -222,12 +228,12 @@ fun EditorRoute(
                 deleteRemote = false
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteDraft(deleteRemote)
-                        confirmDelete = false
-                    },
-                ) {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteDraft(deleteRemote = deleteRemote)
+                            confirmDelete = false
+                        },
+                    ) {
                     Text("删除")
                 }
             },
@@ -245,11 +251,13 @@ fun EditorRoute(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("确认删除《${currentDraft.title.ifBlank { "未命名文章" }}》吗？")
-                    if (currentDraft.slug.isNotBlank()) {
+                    if (!isRemoteSession && currentDraft.slug.isNotBlank()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = deleteRemote, onCheckedChange = { deleteRemote = it })
                             Text("同时删除 GitHub 远程文章")
                         }
+                    } else if (isRemoteSession) {
+                        Text("这会直接删除 GitHub 上的远端文章。")
                     }
                 }
             },
