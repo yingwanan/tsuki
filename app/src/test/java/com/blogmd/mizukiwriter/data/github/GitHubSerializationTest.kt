@@ -6,6 +6,28 @@ import org.junit.Test
 class GitHubSerializationTest {
 
     @Test
+    fun `deserializes GitHub contents file response with inline base64 content`() {
+        val response = githubJson.decodeFromString(
+            GitHubContentDocumentResponse.serializer(),
+            """
+            {
+              "name": "config.ts",
+              "path": "src/config.ts",
+              "sha": "file-sha",
+              "type": "file",
+              "content": "ZXhwb3J0IGNvbnN0IHNpdGVDb25maWcgPSB7fTs=",
+              "encoding": "base64",
+              "download_url": "https://raw.githubusercontent.com/demo/blog/master/src/config.ts"
+            }
+            """.trimIndent(),
+        )
+
+        assertThat(response.path).isEqualTo("src/config.ts")
+        assertThat(response.content).contains("ZXhwb3J0")
+        assertThat(response.encoding).isEqualTo("base64")
+    }
+
+    @Test
     fun `serializes git tree entry defaults required by GitHub`() {
         val payload = githubJson.encodeToString(
             GitHubCreateTreeRequest.serializer(),

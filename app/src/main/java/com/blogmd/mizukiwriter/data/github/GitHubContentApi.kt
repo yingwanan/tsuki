@@ -11,13 +11,19 @@ import retrofit2.http.Query
 import retrofit2.http.HTTP
 
 interface GitHubContentApi {
+    @GET("repos/{owner}/{repo}")
+    suspend fun getRepository(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+    ): GitHubRepositoryResponse
+
     @GET("repos/{owner}/{repo}/contents/{path}")
     suspend fun getContent(
         @Path("owner") owner: String,
         @Path("repo") repo: String,
         @Path(value = "path", encoded = true) path: String,
         @Query("ref") ref: String,
-    ): GitHubContentResponse
+    ): GitHubContentDocumentResponse
 
     @PUT("repos/{owner}/{repo}/contents/{path}")
     suspend fun putContent(
@@ -64,6 +70,13 @@ interface GitHubContentApi {
         @Body body: GitHubBlobRequest,
     ): GitHubBlobResponse
 
+    @GET("repos/{owner}/{repo}/git/blobs/{fileSha}")
+    suspend fun getBlob(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path("fileSha") fileSha: String,
+    ): GitHubBlobContentResponse
+
     @POST("repos/{owner}/{repo}/git/trees")
     suspend fun createTree(
         @Path("owner") owner: String,
@@ -85,4 +98,19 @@ interface GitHubContentApi {
         @Path(value = "branch", encoded = true) branch: String,
         @Body body: GitHubUpdateRefRequest,
     ): GitHubRefResponse
+
+    @POST("repos/{owner}/{repo}/git/refs")
+    suspend fun createBranchRef(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Body body: GitHubCreateRefRequest,
+    ): GitHubRefResponse
+
+    @GET("repos/{owner}/{repo}/actions/runs")
+    suspend fun listWorkflowRuns(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Query("branch") branch: String? = null,
+        @Query("per_page") perPage: Int = 20,
+    ): GitHubWorkflowRunsResponse
 }

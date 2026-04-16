@@ -3,6 +3,7 @@ package com.blogmd.mizukiwriter.data.github
 import com.blogmd.mizukiwriter.data.media.AssetStorageContract
 import com.blogmd.mizukiwriter.data.model.DraftPost
 import com.blogmd.mizukiwriter.data.settings.GitHubSettings
+import com.blogmd.mizukiwriter.domain.GitBranchTargetResolver
 import com.blogmd.mizukiwriter.domain.FrontmatterBuilder
 import com.blogmd.mizukiwriter.domain.SlugGenerator
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -20,15 +21,20 @@ import java.time.LocalDateTime
 import java.util.Base64
 
 interface GitHubGateway {
-    suspend fun getContent(owner: String, repo: String, path: String, ref: String): GitHubContentResponse
+    suspend fun getRepository(owner: String, repo: String): GitHubRepositoryResponse
+    suspend fun getContent(owner: String, repo: String, path: String, ref: String): GitHubContentDocumentResponse
+    suspend fun putContent(owner: String, repo: String, path: String, body: GitHubContentRequest): GitHubContentResponse
     suspend fun deleteContent(owner: String, repo: String, path: String, body: GitHubDeleteRequest): GitHubContentResponse
     suspend fun getBranchRef(owner: String, repo: String, branch: String): GitHubRefResponse
     suspend fun getCommit(owner: String, repo: String, commitSha: String): GitHubCommitResponse
     suspend fun getTree(owner: String, repo: String, treeSha: String, recursive: Boolean = true): GitHubTreeResponse
     suspend fun createBlob(owner: String, repo: String, body: GitHubBlobRequest): GitHubBlobResponse
+    suspend fun getBlob(owner: String, repo: String, fileSha: String): GitHubBlobContentResponse
     suspend fun createTree(owner: String, repo: String, body: GitHubCreateTreeRequest): GitHubTreeResponse
     suspend fun createCommit(owner: String, repo: String, body: GitHubCreateCommitRequest): GitHubCommitResponse
     suspend fun updateBranchRef(owner: String, repo: String, branch: String, body: GitHubUpdateRefRequest): GitHubRefResponse
+    suspend fun createBranchRef(owner: String, repo: String, body: GitHubCreateRefRequest): GitHubRefResponse
+    suspend fun listWorkflowRuns(owner: String, repo: String, branch: String? = null): GitHubWorkflowRunsResponse
 }
 
 interface GitHubPublisherContract {
@@ -38,8 +44,19 @@ interface GitHubPublisherContract {
         overwrite: Boolean = false,
     ): GitHubPublishResult
 
+    suspend fun publishRemoteArticle(
+        draft: DraftPost,
+        settings: GitHubSettings,
+        remotePath: String,
+    ): GitHubPublishResult
+
     suspend fun deleteRemoteArticle(
         draft: DraftPost,
+        settings: GitHubSettings,
+    ): GitHubDeleteResult
+
+    suspend fun deleteRemoteArticleByPath(
+        articlePath: String,
         settings: GitHubSettings,
     ): GitHubDeleteResult
 }
@@ -61,18 +78,18 @@ class GitHubPublisher(
         val articleRoot = "${settings.postsBasePath.trim('/')}/$slug"
         val markdown = buildMarkdown(draft.copy(slug = slug), settings)
         val api = gatewayFactory(settings.personalAccessToken)
-        val branch = settings.branch.ifBlank { GitHubSettings().branch }
+        val branchTarget = resolveBranchTarget(settings)
         val indexPath = "$articleRoot/index.md"
 
         return try {
             val existingSha = runCatching {
-                api.getContent(settings.owner, settings.repo, indexPath, branch).sha
+                api.getContent(settings.owner, settings.repo, indexPath, branchTarget.targetBranch).sha
             }.getOrNull()
             if (existingSha != null && !overwrite) {
                 return GitHubPublishResult.Conflict(slug, indexPath)
             }
 
-            val headRef = api.getBranchRef(settings.owner, settings.repo, branch)
+            val headRef = ensureTargetBranch(api, settings, branchTarget)
             val headCommitSha = headRef.obj.sha
             val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
 
@@ -119,7 +136,7 @@ class GitHubPublisher(
             api.updateBranchRef(
                 settings.owner,
                 settings.repo,
-                branch,
+                branchTarget.targetBranch,
                 GitHubUpdateRefRequest(sha = commit.sha),
             )
 
@@ -141,11 +158,11 @@ class GitHubPublisher(
 
         val slug = draft.slug.ifBlank { SlugGenerator.fromTitle(draft.title, LocalDateTime.now()) }
         val articleRoot = "${settings.postsBasePath.trim('/')}/$slug"
-        val branch = settings.branch.ifBlank { GitHubSettings().branch }
         val api = gatewayFactory(settings.personalAccessToken)
+        val branchTarget = resolveBranchTarget(settings)
 
         return try {
-            val headRef = api.getBranchRef(settings.owner, settings.repo, branch)
+            val headRef = ensureTargetBranch(api, settings, branchTarget)
             val headCommitSha = headRef.obj.sha
             val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
             val tree = api.getTree(settings.owner, settings.repo, headCommit.tree.sha)
@@ -185,10 +202,152 @@ class GitHubPublisher(
             api.updateBranchRef(
                 settings.owner,
                 settings.repo,
-                branch,
+                branchTarget.targetBranch,
                 GitHubUpdateRefRequest(sha = commit.sha),
             )
             GitHubDeleteResult.Success(slug)
+        } catch (error: HttpException) {
+            GitHubDeleteResult.Failure(error.toReadableMessage("GitHub 删除失败"))
+        } catch (error: Throwable) {
+            GitHubDeleteResult.Failure(error.message ?: "未知删除错误")
+        }
+    }
+
+    override suspend fun publishRemoteArticle(
+        draft: DraftPost,
+        settings: GitHubSettings,
+        remotePath: String,
+    ): GitHubPublishResult {
+        if (settings.owner.isBlank() || settings.repo.isBlank() || settings.personalAccessToken.isBlank()) {
+            return GitHubPublishResult.Failure("请先在设置页填写 GitHub owner、repo 和 PAT")
+        }
+
+        val api = gatewayFactory(settings.personalAccessToken)
+        val branchTarget = resolveBranchTarget(settings)
+        val markdown = buildMarkdown(draft, settings)
+        val assetRoot = remotePath.substringBeforeLast('/', missingDelimiterValue = "")
+
+        return try {
+            val headRef = ensureTargetBranch(api, settings, branchTarget)
+            val headCommitSha = headRef.obj.sha
+            val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
+            val treeEntries = buildList {
+                add(
+                    buildTreeEntry(
+                        api = api,
+                        owner = settings.owner,
+                        repo = settings.repo,
+                        path = remotePath,
+                        content = markdown.encodeToByteArray().toBase64(),
+                    ),
+                )
+                for (file in assetStorage.listAssetFiles(draft.id)) {
+                    val path = if (assetRoot.isBlank()) file.name else "$assetRoot/${file.name}"
+                    add(
+                        buildTreeEntry(
+                            api = api,
+                            owner = settings.owner,
+                            repo = settings.repo,
+                            path = path,
+                            content = file.readAsBase64(),
+                        ),
+                    )
+                }
+            }
+            val tree = api.createTree(
+                settings.owner,
+                settings.repo,
+                GitHubCreateTreeRequest(
+                    baseTree = headCommit.tree.sha,
+                    tree = treeEntries,
+                ),
+            )
+            val commit = api.createCommit(
+                settings.owner,
+                settings.repo,
+                GitHubCreateCommitRequest(
+                    message = "feat(blog): update ${draft.slug.ifBlank { remotePath.substringBeforeLast('/').substringAfterLast('/') }}",
+                    tree = tree.sha,
+                    parents = listOf(headCommitSha),
+                ),
+            )
+            api.updateBranchRef(
+                settings.owner,
+                settings.repo,
+                branchTarget.targetBranch,
+                GitHubUpdateRefRequest(sha = commit.sha),
+            )
+            GitHubPublishResult.Success(draft.slug.ifBlank { remotePath.substringBeforeLast('/').substringAfterLast('/') })
+        } catch (error: HttpException) {
+            GitHubPublishResult.Failure(error.toReadableMessage("GitHub 请求失败"))
+        } catch (error: Throwable) {
+            GitHubPublishResult.Failure(error.message ?: "未知发布错误")
+        }
+    }
+
+    override suspend fun deleteRemoteArticleByPath(
+        articlePath: String,
+        settings: GitHubSettings,
+    ): GitHubDeleteResult {
+        if (settings.owner.isBlank() || settings.repo.isBlank() || settings.personalAccessToken.isBlank()) {
+            return GitHubDeleteResult.Failure("请先在设置页填写 GitHub owner、repo 和 PAT")
+        }
+
+        val api = gatewayFactory(settings.personalAccessToken)
+        val branchTarget = resolveBranchTarget(settings)
+
+        return try {
+            val headRef = ensureTargetBranch(api, settings, branchTarget)
+            val headCommitSha = headRef.obj.sha
+            val headCommit = api.getCommit(settings.owner, settings.repo, headCommitSha)
+            val tree = api.getTree(settings.owner, settings.repo, headCommit.tree.sha)
+            val rootPrefix = if (articlePath.endsWith("/index.md")) {
+                articlePath.substringBeforeLast('/') + "/"
+            } else {
+                null
+            }
+            val remoteFiles = tree.tree.filter { node ->
+                node.type == "blob" && when {
+                    rootPrefix != null -> node.path.startsWith(rootPrefix)
+                    else -> node.path == articlePath
+                }
+            }
+
+            if (remoteFiles.isEmpty()) {
+                return GitHubDeleteResult.Failure("未找到 GitHub 远程文章：$articlePath")
+            }
+
+            val deleteTree = api.createTree(
+                settings.owner,
+                settings.repo,
+                GitHubCreateTreeRequest(
+                    baseTree = headCommit.tree.sha,
+                    tree = remoteFiles.map { node ->
+                        GitHubTreeEntry(
+                            path = node.path,
+                            mode = node.mode,
+                            type = node.type,
+                            sha = null,
+                        )
+                    },
+                ),
+            )
+            val commit = api.createCommit(
+                settings.owner,
+                settings.repo,
+                GitHubCreateCommitRequest(
+                    message = "chore(blog): delete ${articlePath.substringBeforeLast('/').substringAfterLast('/')}",
+                    tree = deleteTree.sha,
+                    parents = listOf(headCommitSha),
+                ),
+            )
+            api.updateBranchRef(
+                settings.owner,
+                settings.repo,
+                branchTarget.targetBranch,
+                GitHubUpdateRefRequest(sha = commit.sha),
+            )
+            GitHubDeleteResult.Success(articlePath.substringBeforeLast('/').substringAfterLast('/'))
         } catch (error: HttpException) {
             GitHubDeleteResult.Failure(error.toReadableMessage("GitHub 删除失败"))
         } catch (error: Throwable) {
@@ -220,6 +379,32 @@ class GitHubPublisher(
         val blob = api.createBlob(owner, repo, GitHubBlobRequest(content = content))
         return GitHubTreeEntry(path = path, sha = blob.sha)
     }
+
+    private suspend fun ensureTargetBranch(
+        api: GitHubGateway,
+        settings: GitHubSettings,
+        branchTarget: com.blogmd.mizukiwriter.domain.GitBranchTarget,
+    ): GitHubRefResponse {
+        return try {
+            api.getBranchRef(settings.owner, settings.repo, branchTarget.targetBranch)
+        } catch (error: HttpException) {
+            if (!branchTarget.requiresBranchCreation || error.code() != 404) throw error
+            val baseRef = api.getBranchRef(settings.owner, settings.repo, branchTarget.baseBranch)
+            api.createBranchRef(
+                settings.owner,
+                settings.repo,
+                GitHubCreateRefRequest(
+                    ref = "refs/heads/${branchTarget.targetBranch}",
+                    sha = baseRef.obj.sha,
+                ),
+            )
+        }
+    }
+
+    private fun resolveBranchTarget(settings: GitHubSettings) = GitBranchTargetResolver.resolve(
+        settings = settings,
+        generatedBranchName = "tsuki/update/blog-content",
+    )
 }
 
 internal val githubJson = Json {
@@ -227,7 +412,7 @@ internal val githubJson = Json {
     encodeDefaults = true
 }
 
-private fun createGateway(token: String): GitHubGateway {
+internal fun createGateway(token: String): GitHubGateway {
     val okHttp = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
@@ -247,8 +432,14 @@ private fun createGateway(token: String): GitHubGateway {
 
     val api = retrofit.create(GitHubContentApi::class.java)
     return object : GitHubGateway {
-        override suspend fun getContent(owner: String, repo: String, path: String, ref: String): GitHubContentResponse =
+        override suspend fun getRepository(owner: String, repo: String): GitHubRepositoryResponse =
+            api.getRepository(owner, repo)
+
+        override suspend fun getContent(owner: String, repo: String, path: String, ref: String): GitHubContentDocumentResponse =
             api.getContent(owner, repo, path, ref)
+
+        override suspend fun putContent(owner: String, repo: String, path: String, body: GitHubContentRequest): GitHubContentResponse =
+            api.putContent(owner, repo, path, body)
 
         override suspend fun deleteContent(owner: String, repo: String, path: String, body: GitHubDeleteRequest): GitHubContentResponse =
             api.deleteContent(owner, repo, path, body)
@@ -265,6 +456,9 @@ private fun createGateway(token: String): GitHubGateway {
         override suspend fun createBlob(owner: String, repo: String, body: GitHubBlobRequest): GitHubBlobResponse =
             api.createBlob(owner, repo, body)
 
+        override suspend fun getBlob(owner: String, repo: String, fileSha: String): GitHubBlobContentResponse =
+            api.getBlob(owner, repo, fileSha)
+
         override suspend fun createTree(owner: String, repo: String, body: GitHubCreateTreeRequest): GitHubTreeResponse =
             api.createTree(owner, repo, body)
 
@@ -273,6 +467,12 @@ private fun createGateway(token: String): GitHubGateway {
 
         override suspend fun updateBranchRef(owner: String, repo: String, branch: String, body: GitHubUpdateRefRequest): GitHubRefResponse =
             api.updateBranchRef(owner, repo, branch, body)
+
+        override suspend fun createBranchRef(owner: String, repo: String, body: GitHubCreateRefRequest): GitHubRefResponse =
+            api.createBranchRef(owner, repo, body)
+
+        override suspend fun listWorkflowRuns(owner: String, repo: String, branch: String?): GitHubWorkflowRunsResponse =
+            api.listWorkflowRuns(owner, repo, branch)
     }
 }
 

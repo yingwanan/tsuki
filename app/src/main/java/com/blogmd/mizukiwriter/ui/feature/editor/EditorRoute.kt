@@ -15,33 +15,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
-import androidx.compose.material.icons.automirrored.outlined.ShortText
-import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.DragHandle
-import androidx.compose.material.icons.outlined.FormatBold
-import androidx.compose.material.icons.outlined.FormatItalic
-import androidx.compose.material.icons.outlined.FormatListBulleted
-import androidx.compose.material.icons.outlined.FormatListNumbered
-import androidx.compose.material.icons.outlined.FormatQuote
-import androidx.compose.material.icons.outlined.HorizontalRule
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Preview
 import androidx.compose.material.icons.outlined.Publish
-import androidx.compose.material.icons.outlined.ShortText
-import androidx.compose.material.icons.outlined.StrikethroughS
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -80,29 +62,37 @@ import com.blogmd.mizukiwriter.data.model.DraftPost
 import com.blogmd.mizukiwriter.domain.MarkdownAction
 import com.blogmd.mizukiwriter.domain.MarkdownEditorEngine
 import com.blogmd.mizukiwriter.ui.appContainer
-import com.blogmd.mizukiwriter.ui.components.MarkdownPreview
 import kotlinx.coroutines.delay
+import androidx.compose.material3.CardDefaults
+import com.blogmd.mizukiwriter.ui.components.MarkdownEditorMode
+import com.blogmd.mizukiwriter.ui.components.MarkdownEditorToolbar
+import com.blogmd.mizukiwriter.ui.components.MarkdownEditorWorkspace
 
-private enum class PreviewMode { Edit, Split, Preview }
 private enum class PickerTarget { Cover, Inline }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorRoute(
     draftId: Long,
+    remoteArticlePath: String? = null,
+    remoteArticleTitle: String? = null,
     onBack: () -> Unit,
 ) {
     val container = LocalContext.current.appContainer
     val viewModel: EditorViewModel = viewModel(
-        key = "editor-$draftId",
+        key = "editor-$draftId-${remoteArticlePath.orEmpty()}",
         factory = EditorViewModel.factory(
             draftId = draftId,
+            remoteArticlePath = remoteArticlePath,
+            remoteArticleTitle = remoteArticleTitle,
             draftRepository = container.draftRepository,
             settingsRepository = container.settingsRepository,
             assetStorage = container.assetStorage,
             gitHubPublisher = container.gitHubPublisher,
+            workspaceRepository = container.gitHubWorkspaceRepository,
         ),
     )
+    val isRemoteSession = viewModel.isRemoteSession
     val draft by viewModel.draft.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val message by viewModel.message.collectAsState()
@@ -130,14 +120,14 @@ fun EditorRoute(
         return
     }
 
-    var previewMode by remember(currentDraft.id) { mutableStateOf(PreviewMode.Edit) }
+    var previewMode by remember(currentDraft.id) { mutableStateOf(MarkdownEditorMode.Edit) }
     var metadataExpanded by remember(currentDraft.id) {
         mutableStateOf(currentDraft.title.isBlank() && currentDraft.description.isBlank())
     }
     var advancedExpanded by remember(currentDraft.id) { mutableStateOf(false) }
     var pendingPickerTarget by remember { mutableStateOf(PickerTarget.Inline) }
     var confirmDelete by remember { mutableStateOf(false) }
-    var deleteRemote by remember(currentDraft.id) { mutableStateOf(false) }
+    var deleteRemote by remember(currentDraft.id, isRemoteSession) { mutableStateOf(false) }
     var bodyValue by remember(currentDraft.id) { mutableStateOf(TextFieldValue(currentDraft.body)) }
     var previewContent by remember(currentDraft.id) {
         mutableStateOf(previewMarkdown(currentDraft, settings.defaultAuthor))
@@ -153,7 +143,7 @@ fun EditorRoute(
     }
 
     LaunchedEffect(currentDraft.id, previewMode) {
-        if (previewMode != PreviewMode.Edit) {
+        if (previewMode != MarkdownEditorMode.Edit) {
             previewContent = previewMarkdown(currentDraft, settings.defaultAuthor)
         }
     }
@@ -164,9 +154,9 @@ fun EditorRoute(
         currentDraft.description,
         currentDraft.author,
         currentDraft.body,
-        settings.defaultAuthor,
-    ) {
-        if (previewMode == PreviewMode.Edit) return@LaunchedEffect
+        settings.defaultAuthor
+) {
+        if (previewMode == MarkdownEditorMode.Edit) return@LaunchedEffect
         delay(PREVIEW_UPDATE_DELAY_MS)
         previewContent = previewMarkdown(currentDraft, settings.defaultAuthor)
     }
@@ -222,12 +212,12 @@ fun EditorRoute(
                 deleteRemote = false
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteDraft(deleteRemote)
-                        confirmDelete = false
-                    },
-                ) {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteDraft(deleteRemote = deleteRemote)
+                            confirmDelete = false
+                        },
+                    ) {
                     Text("删除")
                 }
             },
@@ -245,11 +235,13 @@ fun EditorRoute(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("确认删除《${currentDraft.title.ifBlank { "未命名文章" }}》吗？")
-                    if (currentDraft.slug.isNotBlank()) {
+                    if (!isRemoteSession && currentDraft.slug.isNotBlank()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = deleteRemote, onCheckedChange = { deleteRemote = it })
                             Text("同时删除 GitHub 远程文章")
                         }
+                    } else if (isRemoteSession) {
+                        Text("这会直接删除 GitHub 上的远端文章。")
                     }
                 }
             },
@@ -277,9 +269,9 @@ fun EditorRoute(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (previewMode != PreviewMode.Preview) {
+            if (previewMode != MarkdownEditorMode.Preview) {
                 Surface(shadowElevation = 8.dp) {
-                    EditorToolbar(
+                    MarkdownEditorToolbar(
                         modifier = Modifier
                             .fillMaxWidth()
                             .imePadding()
@@ -304,8 +296,8 @@ fun EditorRoute(
                     )
                 }
             }
-        },
-    ) { innerPadding ->
+        }
+) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -313,11 +305,6 @@ fun EditorRoute(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            ModeSelectorRow(
-                previewMode = previewMode,
-                onModeSelected = { previewMode = it },
-            )
-
             MetadataPanel(
                 draft = currentDraft,
                 expanded = metadataExpanded,
@@ -333,74 +320,18 @@ fun EditorRoute(
                 },
             )
 
-            when (previewMode) {
-                PreviewMode.Edit -> {
-                    OutlinedTextField(
-                        value = bodyValue,
-                        onValueChange = {
-                            bodyValue = it
-                            viewModel.updateDraft { draftState -> draftState.copy(body = it.text) }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                        placeholder = { Text("开始写正文…") },
-                    )
-                }
-
-                PreviewMode.Split -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                        ) {
-                            MarkdownPreview(
-                                markdown = previewContent,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                        ) {
-                            OutlinedTextField(
-                                value = bodyValue,
-                                onValueChange = {
-                                    bodyValue = it
-                                    viewModel.updateDraft { draftState -> draftState.copy(body = it.text) }
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                                placeholder = { Text("正文输入区在下方，靠近键盘更方便。") },
-                            )
-                        }
-                    }
-                }
-
-                PreviewMode.Preview -> {
-                    Card(modifier = Modifier.fillMaxSize()) {
-                        MarkdownPreview(
-                            markdown = previewContent,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-            }
+            MarkdownEditorWorkspace(
+                mode = previewMode,
+                onModeSelected = { previewMode = it },
+                bodyValue = bodyValue,
+                onBodyValueChange = {
+                    bodyValue = it
+                    viewModel.updateDraft { draftState -> draftState.copy(body = it.text) }
+                },
+                previewMarkdown = previewContent,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
-    }
-}
-
-@Composable
-private fun ModeSelectorRow(
-    previewMode: PreviewMode,
-    onModeSelected: (PreviewMode) -> Unit,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        AssistChip(onClick = { onModeSelected(PreviewMode.Edit) }, label = { Text(if (previewMode == PreviewMode.Edit) "全屏编辑" else "编辑") })
-        AssistChip(onClick = { onModeSelected(PreviewMode.Split) }, label = { Text("分屏") })
-        AssistChip(onClick = { onModeSelected(PreviewMode.Preview) }, label = { Text("预览") })
     }
 }
 
@@ -693,8 +624,8 @@ private fun MetadataTextField(
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         minLines = minLines,
         maxLines = maxLines,
-        singleLine = singleLine,
-    )
+        singleLine = singleLine
+)
 }
 
 internal fun syncExternalTextFieldValue(
@@ -708,8 +639,8 @@ internal fun syncExternalTextFieldValue(
         selection = TextRange(
             start = current.selection.start.coerceIn(0, maxIndex),
             end = current.selection.end.coerceIn(0, maxIndex),
-        ),
-    )
+        )
+)
 }
 
 private const val PREVIEW_UPDATE_DELAY_MS = 180L
@@ -721,8 +652,8 @@ private fun TwoFieldRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+) {
         Box(modifier = Modifier.weight(1f)) { first() }
         Box(modifier = Modifier.weight(1f)) { second() }
     }
@@ -739,8 +670,8 @@ private fun SwitchRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+) {
         SwitchItem(
             modifier = Modifier.weight(1f),
             label = firstLabel,
@@ -766,59 +697,11 @@ private fun SwitchItem(
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+        verticalAlignment = Alignment.CenterVertically
+) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
-}
-
-@Composable
-private fun EditorToolbar(
-    modifier: Modifier = Modifier,
-    onAction: (MarkdownAction) -> Unit,
-    onPickImage: () -> Unit,
-) {
-    Row(
-        modifier = modifier
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ToolbarChip("粗体", Icons.Outlined.FormatBold) { onAction(MarkdownAction.Bold) }
-        ToolbarChip("斜体", Icons.Outlined.FormatItalic) { onAction(MarkdownAction.Italic) }
-        ToolbarChip("删除线", Icons.Outlined.StrikethroughS) { onAction(MarkdownAction.Strikethrough) }
-        ToolbarChip("标题", Icons.AutoMirrored.Outlined.ShortText) { onAction(MarkdownAction.Heading(2)) }
-        ToolbarChip("引用", Icons.Outlined.FormatQuote) { onAction(MarkdownAction.Quote) }
-        ToolbarChip("列表", Icons.AutoMirrored.Outlined.FormatListBulleted) { onAction(MarkdownAction.BulletList) }
-        ToolbarChip("编号", Icons.Outlined.FormatListNumbered) { onAction(MarkdownAction.OrderedList) }
-        ToolbarChip("任务", Icons.Outlined.Checklist) { onAction(MarkdownAction.TaskList) }
-        ToolbarChip("行内代码", Icons.Outlined.DragHandle) { onAction(MarkdownAction.InlineCode) }
-        ToolbarChip("代码块", Icons.Outlined.Code) { onAction(MarkdownAction.CodeBlock("markdown")) }
-        ToolbarChip("链接", Icons.Outlined.Link) { onAction(MarkdownAction.Link("label", "https://")) }
-        ToolbarChip("图片", Icons.Outlined.Image, onPickImage)
-        ToolbarChip("居中", Icons.Outlined.Preview) { onAction(MarkdownAction.CenterBlock) }
-        ToolbarChip("分割线", Icons.Outlined.HorizontalRule) { onAction(MarkdownAction.Divider) }
-    }
-}
-
-@Composable
-private fun ToolbarChip(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-) {
-    AssistChip(
-        onClick = onClick,
-        label = { Text(label) },
-        leadingIcon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.width(18.dp),
-            )
-        },
-    )
 }
 
 private fun previewMarkdown(
