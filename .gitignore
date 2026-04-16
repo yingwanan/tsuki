@@ -7,3 +7,8 @@ keystore.properties
 *.jks
 *.keystore
 反馈图/
+.codex/
+docs/superpowers/
+docs/gemini-frontend-refactor-guide.json
+verification.md
+refactor_cards.py
