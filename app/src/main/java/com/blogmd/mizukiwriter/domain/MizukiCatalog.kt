@@ -1,5 +1,10 @@
 package com.blogmd.mizukiwriter.domain
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+
 data class MizukiConfigExport(
     val title: String,
     val bindingName: String,
@@ -54,6 +59,72 @@ object MizukiCatalog {
     const val diaryPath = "src/data/diary.ts"
     const val diaryBinding = "diaryData"
 
+    private data class DocumentKey(
+        val path: String,
+        val bindingName: String?,
+    )
+
+    private val structuredEntryTemplates = mapOf(
+        DocumentKey("src/data/friends.ts", "friendsData") to jsonObject(
+            "name" to "",
+            "description" to "",
+            "url" to "",
+            "avatar" to "",
+        ),
+        DocumentKey("src/data/diary.ts", "diaryData") to jsonObject(
+            "content" to "",
+            "date" to "",
+            "tags" to emptyJsonArray(),
+            "images" to emptyJsonArray(),
+        ),
+        DocumentKey("src/data/projects.ts", "projectsData") to jsonObject(
+            "name" to "",
+            "description" to "",
+            "cover" to "",
+            "icon" to "",
+            "url" to "",
+            "github" to "",
+            "techStack" to emptyJsonArray(),
+            "longDescription" to "",
+        ),
+        DocumentKey("src/data/skills.ts", "skillsData") to jsonObject(
+            "name" to "",
+            "description" to "",
+            "icon" to "",
+            "category" to "",
+            "level" to "",
+        ),
+        DocumentKey("src/data/timeline.ts", "timelineData") to jsonObject(
+            "title" to "",
+            "description" to "",
+            "date" to "",
+            "icon" to "",
+            "category" to "",
+        ),
+        DocumentKey("src/data/devices.ts", "devicesData") to jsonObject(
+            "name" to "",
+            "description" to "",
+            "items" to JsonArray(
+                listOf(
+                    jsonObject(
+                        "name" to "",
+                        "description" to "",
+                        "icon" to "",
+                        "link" to "",
+                    ),
+                ),
+            ),
+        ),
+        DocumentKey("src/data/anime.ts", "localAnimeList") to jsonObject(
+            "title" to "",
+            "description" to "",
+            "cover" to "",
+            "year" to "",
+            "episodes" to 0,
+            "tags" to emptyJsonArray(),
+        ),
+    )
+
     private val commonFieldLabels = mapOf(
         "title" to FieldPresentation("标题"),
         "description" to FieldPresentation("简介"),
@@ -67,6 +138,7 @@ object MizukiCatalog {
         "links" to FieldPresentation("链接列表"),
         "icon" to FieldPresentation("图标"),
         "image" to FieldPresentation("图片"),
+        "images" to FieldPresentation("图片列表"),
         "avatar" to FieldPresentation("头像"),
         "cover" to FieldPresentation("封面"),
         "banner" to FieldPresentation("横幅"),
@@ -108,6 +180,10 @@ object MizukiCatalog {
         "licenseName" to FieldPresentation("许可名称"),
         "source" to FieldPresentation("来源"),
         "homepage" to FieldPresentation("主页"),
+        "github" to FieldPresentation("GitHub 地址"),
+        "techStack" to FieldPresentation("技术栈"),
+        "longDescription" to FieldPresentation("详细描述"),
+        "level" to FieldPresentation("熟练度"),
         "id" to FieldPresentation("编号"),
     )
 
@@ -134,6 +210,10 @@ object MizukiCatalog {
         bindingName != null ->
             featureDocuments.firstOrNull { it.path == path && it.bindingName == bindingName }?.title ?: "结构化内容"
         else -> "远程内容"
+    }
+
+    fun createArrayItemTemplate(path: String, bindingName: String?): JsonElement? {
+        return structuredEntryTemplates[DocumentKey(path = path, bindingName = bindingName)]?.deepCopy()
     }
 
     private val markdownLabels = mapOf(
@@ -168,12 +248,18 @@ object MizukiCatalog {
         "content" to FieldPresentation("日记内容"),
         "date" to FieldPresentation("记录日期"),
         "tags" to FieldPresentation("标签"),
+        "images" to FieldPresentation("配图列表"),
     )
 
     private val projectLabels = mapOf(
         "name" to FieldPresentation("项目名称"),
         "description" to FieldPresentation("项目简介"),
+        "cover" to FieldPresentation("项目封面"),
+        "icon" to FieldPresentation("项目图标"),
         "url" to FieldPresentation("项目链接"),
+        "github" to FieldPresentation("GitHub 地址"),
+        "techStack" to FieldPresentation("技术栈"),
+        "longDescription" to FieldPresentation("详细描述"),
         "tags" to FieldPresentation("技术标签"),
     )
 
@@ -181,25 +267,54 @@ object MizukiCatalog {
         "name" to FieldPresentation("技能名称"),
         "description" to FieldPresentation("技能说明"),
         "icon" to FieldPresentation("技能图标"),
+        "category" to FieldPresentation("技能分类"),
+        "level" to FieldPresentation("熟练度"),
     )
 
     private val timelineLabels = mapOf(
         "title" to FieldPresentation("事件标题"),
         "description" to FieldPresentation("事件描述"),
         "date" to FieldPresentation("事件日期"),
+        "icon" to FieldPresentation("事件图标"),
+        "category" to FieldPresentation("事件分类"),
     )
 
     private val deviceLabels = mapOf(
         "name" to FieldPresentation("设备名称"),
         "description" to FieldPresentation("设备说明"),
         "items" to FieldPresentation("设备条目"),
+        "link" to FieldPresentation("跳转链接"),
     )
 
     private val animeLabels = mapOf(
         "title" to FieldPresentation("番剧标题"),
         "description" to FieldPresentation("番剧简介"),
+        "cover" to FieldPresentation("番剧封面"),
         "episodes" to FieldPresentation("集数"),
         "tags" to FieldPresentation("标签"),
         "year" to FieldPresentation("年份"),
     )
+}
+
+private fun jsonObject(vararg pairs: Pair<String, Any>): JsonObject = JsonObject(
+    linkedMapOf(*pairs).mapValues { (_, value) -> value.toJsonElement() },
+)
+
+private fun emptyJsonArray(): JsonArray = JsonArray(emptyList())
+
+private fun Any.toJsonElement(): JsonElement = when (this) {
+    is JsonElement -> this
+    is String -> JsonPrimitive(this)
+    is Int -> JsonPrimitive(this)
+    is Long -> JsonPrimitive(this)
+    is Double -> JsonPrimitive(this)
+    is Float -> JsonPrimitive(this)
+    is Boolean -> JsonPrimitive(this)
+    else -> error("Unsupported template value: $this")
+}
+
+private fun JsonElement.deepCopy(): JsonElement = when (this) {
+    is JsonObject -> JsonObject(mapValues { (_, value) -> value.deepCopy() })
+    is JsonArray -> JsonArray(map { it.deepCopy() })
+    is JsonPrimitive -> JsonPrimitive(content)
 }

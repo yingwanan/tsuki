@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -12,12 +15,12 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,16 +32,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.blogmd.mizukiwriter.domain.MizukiCatalog
+import com.blogmd.mizukiwriter.domain.MarkdownEditorEngine
 import com.blogmd.mizukiwriter.ui.appContainer
+import com.blogmd.mizukiwriter.ui.components.CompactTopBarIconButton
+import com.blogmd.mizukiwriter.ui.components.MarkdownEditorMode
+import com.blogmd.mizukiwriter.ui.components.MarkdownEditorToolbar
+import com.blogmd.mizukiwriter.ui.components.MarkdownEditorWorkspace
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
+import com.blogmd.mizukiwriter.ui.feature.editor.syncExternalTextFieldValue
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @Composable
 fun RepositoryFileRoute(
@@ -56,29 +69,49 @@ fun RepositoryFileRoute(
             bindingName = bindingName,
             settingsRepository = container.settingsRepository,
             workspaceRepository = container.gitHubWorkspaceRepository,
-        ),
-    )
+        )
+)
     val state by viewModel.uiState.collectAsState()
     var markdownFrontmatter by remember(state.markdownFrontmatter) { mutableStateOf(state.markdownFrontmatter) }
     var markdownBody by remember(state.markdownBody) { mutableStateOf(state.markdownBody) }
+    var markdownBodyValue by remember(state.sha, state.markdownBody) { mutableStateOf(TextFieldValue(state.markdownBody)) }
+    var markdownEditorMode by remember(state.sha, path) { mutableStateOf(MarkdownEditorMode.Edit) }
     var bindingValue by remember(state.bindingValue) { mutableStateOf(state.bindingValue) }
     val labelResolver: (String) -> String = remember(path, bindingName) {
         { key -> MizukiCatalog.resolveFieldLabel(path = path, bindingName = bindingName, key = key) }
+    }
+    val rootArrayItemTemplate = remember(path, bindingName) {
+        MizukiCatalog.createArrayItemTemplate(path = path, bindingName = bindingName)
     }
 
     LaunchedEffect(Unit) {
         viewModel.refresh()
     }
 
+    LaunchedEffect(markdownBody) {
+        if (markdownBody != markdownBodyValue.text) {
+            markdownBodyValue = syncExternalTextFieldValue(
+                current = markdownBodyValue,
+                externalText = markdownBody,
+            )
+        }
+    }
+
     PrimaryScreenScaffold(
         title = state.title,
-        actions = {
+        navigationIcon = {
             if (onBack != null) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                }
+                CompactTopBarIconButton(
+                    icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = "返回",
+                    onClick = onBack,
+                )
             }
-            IconButton(
+        },
+        actions = {
+            CompactTopBarIconButton(
+                icon = Icons.Outlined.Save,
+                contentDescription = "上传到 GitHub",
                 onClick = {
                     when (state.mode) {
                         RepositoryDocumentMode.Markdown -> viewModel.saveMarkdown(markdownFrontmatter, markdownBody)
@@ -86,22 +119,48 @@ fun RepositoryFileRoute(
                         RepositoryDocumentMode.Unsupported -> Unit
                     }
                 },
-            ) {
-                Icon(Icons.Outlined.Save, contentDescription = "上传到 GitHub")
+            )
+        },
+        bottomBar = {
+            if (state.mode == RepositoryDocumentMode.Markdown && markdownEditorMode != MarkdownEditorMode.Preview) {
+                Surface(shadowElevation = 8.dp) {
+                    MarkdownEditorToolbar(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .imePadding()
+                            .navigationBarsPadding(),
+                        onAction = { action ->
+                            val editResult = MarkdownEditorEngine.apply(
+                                text = markdownBodyValue.text,
+                                selectionStart = markdownBodyValue.selection.start,
+                                selectionEnd = markdownBodyValue.selection.end,
+                                action = action,
+                            )
+                            markdownBodyValue = TextFieldValue(
+                                text = editResult.text,
+                                selection = TextRange(editResult.selectionStart, editResult.selectionEnd),
+                            )
+                            markdownBody = editResult.text
+                        },
+                    )
+                }
             }
         },
-    ) { innerPadding ->
+) { innerPadding ->
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -115,7 +174,10 @@ fun RepositoryFileRoute(
             when (state.mode) {
                 RepositoryDocumentMode.Markdown -> {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -133,17 +195,30 @@ fun RepositoryFileRoute(
                         }
                     }
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                             Column(
-                                modifier = Modifier.padding(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 Text("Markdown 正文", style = MaterialTheme.typography.titleMedium)
-                                OutlinedTextField(
-                                    value = markdownBody,
-                                    onValueChange = { markdownBody = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    minLines = 12,
+                                MarkdownEditorWorkspace(
+                                    mode = markdownEditorMode,
+                                    onModeSelected = { markdownEditorMode = it },
+                                    bodyValue = markdownBodyValue,
+                                    onBodyValueChange = {
+                                        markdownBodyValue = it
+                                        markdownBody = it.text
+                                    },
+                                    previewMarkdown = markdownBody.ifBlank { "开始写作后，预览会出现在这里。" },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 420.dp),
+                                    editPlaceholder = "开始编辑 Markdown…",
                                 )
                             }
                         }
@@ -152,7 +227,10 @@ fun RepositoryFileRoute(
 
                 RepositoryDocumentMode.TypeScriptBinding -> {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -163,6 +241,7 @@ fun RepositoryFileRoute(
                                         label = MizukiCatalog.rootSectionLabel(path = path, bindingName = bindingName),
                                         value = currentValue,
                                         labelResolver = labelResolver,
+                                        rootArrayItemTemplate = rootArrayItemTemplate,
                                         onChange = { bindingValue = it },
                                     )
                                 }
@@ -173,7 +252,10 @@ fun RepositoryFileRoute(
 
                 RepositoryDocumentMode.Unsupported -> {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                             Text(
                                 text = state.message ?: "当前文件暂不支持结构化编辑。",
                                 modifier = Modifier.padding(18.dp),
@@ -184,7 +266,10 @@ fun RepositoryFileRoute(
             }
             state.message?.let { message ->
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = message,
                             modifier = Modifier.padding(18.dp),
@@ -202,6 +287,8 @@ private fun JsonElementEditor(
     label: String,
     value: JsonElement,
     labelResolver: (String) -> String,
+    rootArrayItemTemplate: JsonElement? = null,
+    isRoot: Boolean = true,
     onChange: (JsonElement) -> Unit,
 ) {
     when (value) {
@@ -209,7 +296,10 @@ private fun JsonElementEditor(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(label, style = MaterialTheme.typography.titleSmall)
                 value.entries.forEach { (key, child) ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -218,6 +308,8 @@ private fun JsonElementEditor(
                                 label = labelResolver(key),
                                 value = child,
                                 labelResolver = labelResolver,
+                                rootArrayItemTemplate = null,
+                                isRoot = false,
                                 onChange = { updatedChild ->
                                     onChange(
                                         JsonObject(
@@ -241,15 +333,22 @@ private fun JsonElementEditor(
                     Text(label, style = MaterialTheme.typography.titleSmall)
                     IconButton(
                         onClick = {
-                            val template = value.firstOrNull()
-                            onChange(JsonArray(value + template.blankLike()))
+                            val template = if (isRoot) {
+                                rootArrayItemTemplate ?: value.firstOrNull().blankLike()
+                            } else {
+                                value.firstOrNull().blankLike()
+                            }
+                            onChange(JsonArray(value + template))
                         },
                     ) {
                         Icon(Icons.Outlined.Add, contentDescription = "新增")
                     }
                 }
                 value.forEachIndexed { index, child ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -275,6 +374,8 @@ private fun JsonElementEditor(
                                 label = label,
                                 value = child,
                                 labelResolver = labelResolver,
+                                rootArrayItemTemplate = null,
+                                isRoot = false,
                                 onChange = { updatedChild ->
                                     onChange(
                                         JsonArray(
@@ -339,8 +440,8 @@ private fun String.toJsonPrimitiveLike(previous: JsonPrimitive): JsonPrimitive {
 
 private fun JsonElement?.blankLike(): JsonElement = when (this) {
     is JsonObject -> JsonObject(
-        LinkedHashMap(entries.associate { (key, value) -> key to value.blankLike() }),
-    )
+        LinkedHashMap(entries.associate { (key, value) -> key to value.blankLike() })
+)
     is JsonArray -> JsonObject(emptyMap())
     is JsonPrimitive -> when {
         content == "true" || content == "false" -> JsonPrimitive(false)

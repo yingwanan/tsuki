@@ -43,6 +43,8 @@ import com.blogmd.mizukiwriter.data.settings.DeploymentPlatform
 import com.blogmd.mizukiwriter.data.settings.EdgeOneExecutionMode
 import com.blogmd.mizukiwriter.data.settings.GitHubSettings
 import com.blogmd.mizukiwriter.ui.appContainer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +55,8 @@ fun DeploymentSettingsRoute(
 ) {
     val container = LocalContext.current.appContainer
     val viewModel: DeploymentSettingsViewModel = viewModel(
-        factory = DeploymentSettingsViewModel.factory(container.settingsRepository),
-    )
+        factory = DeploymentSettingsViewModel.factory(container.settingsRepository)
+)
     val state by viewModel.uiState.collectAsState()
     val savedMessage by viewModel.savedMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -106,19 +108,22 @@ fun DeploymentSettingsRoute(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-    ) { innerPadding ->
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+) { innerPadding ->
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -260,7 +265,10 @@ fun DeploymentSettingsRoute(
                         )
                     }
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -337,7 +345,10 @@ private fun DeploymentDocField(
     uriHandler: androidx.compose.ui.platform.UriHandler,
     password: Boolean = false,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -368,7 +379,10 @@ private fun SettingFieldCard(
     onValueChange: (String) -> Unit,
     hint: String,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

@@ -26,6 +26,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.blogmd.mizukiwriter.data.deployment.DeploymentEducationCatalog
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @Composable
 fun DeploymentsRoute(
@@ -38,8 +40,8 @@ fun DeploymentsRoute(
         factory = DeploymentsViewModel.factory(
             settingsRepository = container.settingsRepository,
             deploymentRepository = container.deploymentCenterRepository,
-        ),
-    )
+        )
+)
     val state by viewModel.uiState.collectAsState()
     val uriHandler = LocalUriHandler.current
     val guide = DeploymentEducationCatalog.guideFor(state.selectedPlatform)
@@ -52,14 +54,17 @@ fun DeploymentsRoute(
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -78,7 +83,10 @@ fun DeploymentsRoute(
                 }
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -97,7 +105,10 @@ fun DeploymentsRoute(
                 }
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -143,7 +154,10 @@ fun DeploymentsRoute(
                 }
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -161,7 +175,10 @@ fun DeploymentsRoute(
                 }
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -174,7 +191,10 @@ fun DeploymentsRoute(
                 }
             }
             items(state.deployments, key = { it.id }) { deployment ->
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -196,7 +216,10 @@ fun DeploymentsRoute(
             }
             state.message?.let { message ->
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = message,
                             modifier = Modifier.padding(18.dp),

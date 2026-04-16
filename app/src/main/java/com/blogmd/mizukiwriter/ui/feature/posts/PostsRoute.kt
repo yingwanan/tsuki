@@ -47,6 +47,8 @@ import com.blogmd.mizukiwriter.ui.components.PrimaryScreenHeader
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,8 +63,8 @@ fun PostsRoute(
             settingsRepository = container.settingsRepository,
             assetStorage = container.assetStorage,
             gitHubPublisher = container.gitHubPublisher,
-        ),
-    )
+        )
+)
     val drafts by viewModel.drafts.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -132,8 +134,8 @@ fun PostsRoute(
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = "新建文章")
             }
-        },
-    ) { innerPadding ->
+        }
+) { innerPadding ->
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -155,7 +157,10 @@ fun PostsRoute(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -170,7 +175,10 @@ fun PostsRoute(
                 }
                 if (drafts.isEmpty()) {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -207,9 +215,11 @@ private fun DraftCard(
     onDeleteDraft: () -> Unit,
 ) {
     Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
-        onClick = { onOpenDraft(draft.id) },
-    ) {
+        onClick = { onOpenDraft(draft.id) }
+) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),

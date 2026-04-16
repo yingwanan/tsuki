@@ -11,14 +11,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.blogmd.mizukiwriter.domain.MizukiCatalog
+import com.blogmd.mizukiwriter.ui.components.CompactTopBarIconButton
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @Composable
 fun ConfigFileRoute(
@@ -27,16 +29,18 @@ fun ConfigFileRoute(
 ) {
     PrimaryScreenScaffold(
         title = "配置文件",
-        actions = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-            }
-        },
-    ) { innerPadding ->
+        navigationIcon = {
+            CompactTopBarIconButton(
+                icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = "返回",
+                onClick = onBack,
+            )
+        }
+) { innerPadding ->
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp,
             ),
@@ -44,6 +48,8 @@ fun ConfigFileRoute(
         ) {
             items(MizukiCatalog.configExports, key = { it.bindingName }) { item ->
                 Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onOpenExport(item.title, item.bindingName) },
                 ) {

@@ -44,6 +44,7 @@ class SettingsRepository(context: Context) : SettingsRepositoryContract {
                 personalAccessToken = decodeStoredTokenValue(preferences[TOKEN].orEmpty(), tokenCodec),
                 defaultAuthor = preferences[DEFAULT_AUTHOR].orEmpty(),
                 defaultLicenseName = preferences[DEFAULT_LICENSE].orEmpty(),
+                backgroundImagePath = preferences[BACKGROUND_IMAGE_PATH].orEmpty(),
                 deploymentPlatform = preferences[DEPLOYMENT_PLATFORM]
                     ?.let { runCatching { DeploymentPlatform.valueOf(it) }.getOrNull() }
                     ?: GitHubSettings().deploymentPlatform,
@@ -79,6 +80,7 @@ class SettingsRepository(context: Context) : SettingsRepositoryContract {
             preferences[TOKEN] = encodeStoredTokenValue(settings.personalAccessToken, tokenCodec)
             preferences[DEFAULT_AUTHOR] = settings.defaultAuthor
             preferences[DEFAULT_LICENSE] = settings.defaultLicenseName
+            preferences[BACKGROUND_IMAGE_PATH] = settings.backgroundImagePath
             preferences[DEPLOYMENT_PLATFORM] = settings.deploymentPlatform.name
             preferences[DEPLOYMENT_TOKEN] = encodeStoredTokenValue(settings.deploymentAccessToken, tokenCodec)
             preferences[DEPLOYMENT_PROJECT_NAME] = settings.deploymentProjectName
@@ -108,6 +110,7 @@ class SettingsRepository(context: Context) : SettingsRepositoryContract {
         private val TOKEN = stringPreferencesKey("token")
         private val DEFAULT_AUTHOR = stringPreferencesKey("default_author")
         private val DEFAULT_LICENSE = stringPreferencesKey("default_license")
+        private val BACKGROUND_IMAGE_PATH = stringPreferencesKey("background_image_path")
         private val DEPLOYMENT_PLATFORM = stringPreferencesKey("deployment_platform")
         private val DEPLOYMENT_TOKEN = stringPreferencesKey("deployment_token")
         private val DEPLOYMENT_PROJECT_NAME = stringPreferencesKey("deployment_project_name")

@@ -1,5 +1,8 @@
 package com.blogmd.mizukiwriter.ui.feature.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +16,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -23,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,6 +40,11 @@ import com.blogmd.mizukiwriter.data.settings.GitHubSettings
 import com.blogmd.mizukiwriter.data.settings.WorkspaceMode
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import java.io.File
+import kotlinx.coroutines.launch
 
 private const val GITHUB_FINE_GRAINED_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new"
 private const val GITHUB_PAT_DOCS_URL = "https://docs.github.com/zh/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
@@ -43,12 +53,14 @@ private const val MIZUKI_DOCS_URL = "https://docs.mizuki.mysqil.com/"
 
 @Composable
 fun SettingsRoute() {
-    val container = LocalContext.current.appContainer
+    val context = LocalContext.current
+    val container = context.appContainer
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container.settingsRepository))
     val state by viewModel.uiState.collectAsState()
     val savedMessage by viewModel.savedMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val uriHandler = LocalUriHandler.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(savedMessage) {
         savedMessage?.let {
@@ -70,6 +82,7 @@ fun SettingsRoute() {
             state.personalAccessToken,
             state.defaultAuthor,
             state.defaultLicenseName,
+            state.backgroundImagePath,
         ).joinToString("|")
     }
     var owner by rememberSaveable(formKey) { mutableStateOf(state.owner) }
@@ -83,23 +96,59 @@ fun SettingsRoute() {
     var personalAccessToken by rememberSaveable(formKey) { mutableStateOf(state.personalAccessToken) }
     var defaultAuthor by rememberSaveable(formKey) { mutableStateOf(state.defaultAuthor) }
     var defaultLicenseName by rememberSaveable(formKey) { mutableStateOf(state.defaultLicenseName) }
+    var backgroundImagePath by rememberSaveable(formKey) { mutableStateOf(state.backgroundImagePath) }
     var patGuideExpanded by rememberSaveable { mutableStateOf(false) }
+
+    fun buildSettings(currentBackgroundImagePath: String = backgroundImagePath): GitHubSettings = state.copy(
+        owner = owner,
+        repo = repo,
+        branch = branch,
+        workspaceMode = workspaceMode,
+        updateBranch = updateBranch,
+        postsBasePath = postsBasePath,
+        pagesBasePath = pagesBasePath,
+        configPath = configPath,
+        personalAccessToken = personalAccessToken,
+        defaultAuthor = defaultAuthor,
+        defaultLicenseName = defaultLicenseName,
+        backgroundImagePath = currentBackgroundImagePath,
+    )
+
+    val backgroundPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            container.appBackgroundStorage.importBackground(
+                sourceUri = uri,
+                resolver = context.contentResolver,
+            )
+        }.onSuccess { importedPath ->
+            backgroundImagePath = importedPath
+            viewModel.save(buildSettings(currentBackgroundImagePath = backgroundImagePath))
+        }.onFailure { error ->
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(error.message ?: "背景图导入失败")
+            }
+        }
+    }
 
     PrimaryScreenScaffold(
         title = "GitHub 与写作设置",
-        snackbarHostState = snackbarHostState,
-    ) { innerPadding ->
+        snackbarHostState = snackbarHostState
+) { innerPadding ->
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 32.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -113,6 +162,46 @@ fun SettingsRoute() {
                             TextButton(onClick = { uriHandler.openUri(MIZUKI_DOCS_URL) }) {
                                 Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
                                 Text("查看 Mizuki 文档", modifier = Modifier.padding(start = 6.dp))
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("应用背景图")
+                        Text(
+                            if (backgroundImagePath.isBlank()) {
+                                "当前使用默认背景。你可以选择一张本地图片作为软件背景。"
+                            } else {
+                                "当前图片：${File(backgroundImagePath).name}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            "图片仅保存在本机，不会上传到 GitHub 仓库。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = { backgroundPickerLauncher.launch(arrayOf("image/*")) }) {
+                                Text(if (backgroundImagePath.isBlank()) "选择背景图" else "更换背景图")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    container.appBackgroundStorage.clearBackground(backgroundImagePath)
+                                    backgroundImagePath = ""
+                                    viewModel.save(buildSettings(currentBackgroundImagePath = ""))
+                                },
+                                enabled = backgroundImagePath.isNotBlank(),
+                            ) {
+                                Text("恢复默认背景")
                             }
                         }
                     }
@@ -143,7 +232,10 @@ fun SettingsRoute() {
                 )
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -220,7 +312,10 @@ fun SettingsRoute() {
                 )
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -259,21 +354,7 @@ fun SettingsRoute() {
             item {
                 Button(
                     onClick = {
-                        viewModel.save(
-                            state.copy(
-                                owner = owner,
-                                repo = repo,
-                                branch = branch,
-                                workspaceMode = workspaceMode,
-                                updateBranch = updateBranch,
-                                postsBasePath = postsBasePath,
-                                pagesBasePath = pagesBasePath,
-                                configPath = configPath,
-                                personalAccessToken = personalAccessToken,
-                                defaultAuthor = defaultAuthor,
-                                defaultLicenseName = defaultLicenseName,
-                            ),
-                        )
+                        viewModel.save(buildSettings())
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -299,6 +380,6 @@ private fun SettingField(
         label = { Text(label) },
         supportingText = { Text(hint) },
         visualTransformation = visualTransformation,
-        singleLine = true,
-    )
+        singleLine = true
+)
 }

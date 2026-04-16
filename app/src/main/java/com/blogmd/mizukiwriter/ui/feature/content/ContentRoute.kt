@@ -28,6 +28,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,18 +40,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.blogmd.mizukiwriter.data.github.RemoteContentItem
 import com.blogmd.mizukiwriter.ui.appContainer
+import com.blogmd.mizukiwriter.ui.components.CompactTopBarTextAction
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
+import com.blogmd.mizukiwriter.ui.theme.SwipeCardMaskDark
+import com.blogmd.mizukiwriter.ui.theme.SwipeCardMaskLight
 
 private enum class ContentSourceTab { Local, Remote }
 private enum class RemoteContentTab { Published, Draft }
+private val ArticleCardShape = RoundedCornerShape(24.dp)
 
 @Composable
 fun ContentRoute(
@@ -66,8 +74,8 @@ fun ContentRoute(
             assetStorage = container.assetStorage,
             gitHubPublisher = container.gitHubPublisher,
             workspaceRepository = container.gitHubWorkspaceRepository,
-        ),
-    )
+        )
+)
     val localDrafts by viewModel.localDrafts.collectAsState()
     val remoteItems by viewModel.remoteItems.collectAsState()
     val message by viewModel.message.collectAsState()
@@ -123,22 +131,23 @@ fun ContentRoute(
         title = "文章",
         snackbarHostState = snackbarHostState,
         actions = {
-            TextButton(onClick = { viewModel.refreshRemoteContent() }) {
-                Icon(Icons.Outlined.CloudSync, contentDescription = null)
-                Text("刷新", modifier = Modifier.padding(start = 4.dp))
-            }
+            CompactTopBarTextAction(
+                label = "刷新",
+                icon = Icons.Outlined.CloudSync,
+                onClick = { viewModel.refreshRemoteContent() },
+            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onCreateDraft) {
                 Icon(Icons.Outlined.Add, contentDescription = "新建草稿")
             }
-        },
-    ) { innerPadding ->
+        }
+) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 8.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 96.dp,
             ),
@@ -230,7 +239,10 @@ private fun SourceSwitchCard(
     selectedTab: ContentSourceTab,
     onSelect: (ContentSourceTab) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -259,7 +271,10 @@ private fun RemoteFilterCard(
     draftCount: Int,
     onSelect: (RemoteContentTab) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -286,44 +301,55 @@ private fun SwipeDeleteCard(
     onDelete: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val swipeCardMaskColor = if (isSystemInDarkTheme()) SwipeCardMaskDark else SwipeCardMaskLight
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
             }
             false
-        },
-    )
+        }
+)
     SwipeToDismissBox(
         state = dismissState,
         enableDismissFromStartToEnd = false,
         backgroundContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            if (dismissState.progress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(ArticleCardShape)
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 20.dp),
+                    contentAlignment = Alignment.CenterEnd,
                 ) {
-                    Icon(
-                        Icons.Outlined.DeleteOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                    Text(
-                        "删除",
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Outlined.DeleteOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            "删除",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
             }
-        },
-    ) {
-        content()
+        }
+) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ArticleCardShape)
+                .background(swipeCardMaskColor),
+        ) {
+            content()
+        }
     }
 }
 
@@ -336,9 +362,11 @@ private fun ArticleSummaryCard(
     onClick: () -> Unit,
 ) {
     Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = ArticleCardShape,
         modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
-    ) {
+        onClick = onClick
+) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -371,13 +399,16 @@ private fun DeleteConfirmationDialog(
             }
         },
         title = { Text(title) },
-        text = { Text(body) },
-    )
+        text = { Text(body) }
+)
 }
 
 @Composable
 private fun SectionCard(title: String, subtitle: String) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -394,7 +425,10 @@ private fun EmptyCard(
     actionText: String,
     onAction: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

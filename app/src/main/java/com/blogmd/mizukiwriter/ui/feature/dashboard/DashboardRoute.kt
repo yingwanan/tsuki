@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @Composable
 fun DashboardRoute() {
@@ -30,8 +32,8 @@ fun DashboardRoute() {
             settingsRepository = container.settingsRepository,
             draftRepository = container.draftRepository,
             deploymentRepository = container.deploymentCenterRepository,
-        ),
-    )
+        )
+)
     val state by viewModel.uiState.collectAsState()
     val uriHandler = LocalUriHandler.current
 
@@ -43,7 +45,7 @@ fun DashboardRoute() {
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp,
             ),
@@ -97,7 +99,10 @@ private fun SummaryCard(
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

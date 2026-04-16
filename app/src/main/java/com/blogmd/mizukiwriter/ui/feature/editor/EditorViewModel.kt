@@ -179,7 +179,8 @@ class EditorViewModel(
         val path = remoteArticlePath ?: return
         viewModelScope.launch {
             runCatching {
-                val document = workspaceRepository.loadFile(settings.first(), path)
+                val validSettings = settings.first { it.owner.isNotBlank() }
+                val document = workspaceRepository.loadFile(validSettings, path)
                 val mappedDraft = RemoteArticleMapper.fromMarkdown(document.path, document.content)
                 mappedDraft.copy(
                     id = remoteAssetDraftId(),
@@ -191,6 +192,13 @@ class EditorViewModel(
                 localDraft.value = loadedDraft
             }.onFailure { error ->
                 _message.value = error.message ?: "远端文章加载失败"
+                // Prevent infinite loading state on UI
+                localDraft.value = DraftPost(
+                    id = remoteAssetDraftId(),
+                    title = "加载失败",
+                    description = "无法获取远端内容，请检查网络或配置。",
+                    body = "错误信息：${error.message}"
+                )
             }
         }
     }

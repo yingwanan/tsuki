@@ -26,6 +26,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.blogmd.mizukiwriter.domain.SiteConfigSnapshot
 import com.blogmd.mizukiwriter.ui.appContainer
 import com.blogmd.mizukiwriter.ui.components.PrimaryScreenScaffold
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 
 @Composable
 fun ConfigRoute() {
@@ -34,8 +36,8 @@ fun ConfigRoute() {
         factory = ConfigViewModel.factory(
             settingsRepository = container.settingsRepository,
             workspaceRepository = container.gitHubWorkspaceRepository,
-        ),
-    )
+        )
+)
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -53,14 +55,17 @@ fun ConfigRoute() {
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 4.dp,
+                top = innerPadding.calculateTopPadding(),
                 end = 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -92,7 +97,10 @@ fun ConfigRoute() {
                 }
             }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -114,7 +122,10 @@ fun ConfigRoute() {
             }
             state.message?.let { message ->
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = message,
                             modifier = Modifier.padding(18.dp),
@@ -134,6 +145,6 @@ private fun ConfigField(label: String, value: String, onValueChange: (String) ->
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
-        singleLine = true,
-    )
+        singleLine = true
+)
 }

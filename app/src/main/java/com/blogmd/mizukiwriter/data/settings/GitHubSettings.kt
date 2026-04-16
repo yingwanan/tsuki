@@ -13,6 +13,7 @@ data class GitHubSettings(
     val personalAccessToken: String = "",
     val defaultAuthor: String = "",
     val defaultLicenseName: String = "",
+    val backgroundImagePath: String = "",
     val deploymentPlatform: DeploymentPlatform = DeploymentPlatform.Vercel,
     val deploymentAccessToken: String = "",
     val deploymentProjectName: String = "",
